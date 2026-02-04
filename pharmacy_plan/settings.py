@@ -73,4 +73,6 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# OPENAI_API_KEY 可以从系统环境变量或 .env 文件读取
+# os.getenv() 会自动从系统环境变量读取，如果系统环境变量已配置，则无需 .env 文件
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')

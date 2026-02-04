@@ -15,7 +15,13 @@
 
 ### 1. 准备环境变量
 
-创建 `.env` 文件（参考 `.env.example`）：
+**方式一：使用系统环境变量（推荐，如果已配置）**
+
+如果你已经在系统环境变量中配置了 `OPENAI_API_KEY`，则无需创建 `.env` 文件。代码会自动从系统环境变量读取。
+
+**方式二：使用 .env 文件**
+
+如果使用 Docker 或想使用 `.env` 文件，可以创建 `.env` 文件（参考 `.env.example`）：
 
 ```bash
 OPENAI_API_KEY=your_openai_api_key_here
@@ -26,7 +32,10 @@ POSTGRES_HOST=db
 POSTGRES_PORT=5432
 ```
 
-**重要**：将 `OPENAI_API_KEY` 替换为你的实际 OpenAI API key。
+**注意**：
+- 代码会优先从系统环境变量读取 `OPENAI_API_KEY`
+- 如果系统环境变量已配置，则无需 `.env` 文件
+- 使用 Docker 时，如果系统环境变量已配置，docker-compose.yml 会自动传递（通过 `${OPENAI_API_KEY}`）
 
 ### 2. 使用 Docker Compose 运行
 
