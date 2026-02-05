@@ -1,7 +1,9 @@
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+from django.db.models import Q
+import csv
 import json
 from datetime import datetime
 from .models import Patient, Provider, CarePlan
@@ -112,3 +114,102 @@ def get_careplan(request, careplan_id):
         })
     except CarePlan.DoesNotExist:
         return JsonResponse({'error': 'Care plan not found'}, status=404)
+
+
+def download_careplan(request, careplan_id):
+    """
+    下载单个 care plan 的文本文件（只在 completed 状态下有内容）。
+    不做额外校验或权限控制，最小可用版本。
+    """
+    try:
+        careplan = CarePlan.objects.get(id=careplan_id)
+    except CarePlan.DoesNotExist:
+        return HttpResponse("Care plan not found", status=404)
+
+    if careplan.status != 'completed' or not careplan.generated_content:
+        return HttpResponse("Care plan is not completed yet", status=400)
+
+    filename = f"careplan_{careplan.patient.mrn}_{careplan.medication_name}.txt"
+    response = HttpResponse(careplan.generated_content, content_type='text/plain; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+def search_careplans(request):
+    """
+    最简单的 search + 导出功能：
+    - GET /api/search-careplans/?q=xxx       返回 JSON 列表
+    - GET /api/search-careplans/?q=xxx&export=1  返回 CSV 报表
+    只搜索已 completed 的 care plan。
+    """
+    q = (request.GET.get('q') or '').strip()
+
+    queryset = (
+        CarePlan.objects
+        .filter(status='completed')
+        .select_related('patient', 'provider')
+        .order_by('-created_at')
+    )
+
+    if q:
+        queryset = queryset.filter(
+            Q(patient__first_name__icontains=q)
+            | Q(patient__last_name__icontains=q)
+            | Q(patient__mrn__icontains=q)
+            | Q(provider__name__icontains=q)
+            | Q(provider__npi__icontains=q)
+            | Q(medication_name__icontains=q)
+            | Q(primary_diagnosis__icontains=q)
+        )
+
+    # 导出 CSV 报表
+    if request.GET.get('export') == '1':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="careplans_report.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'patient_mrn',
+            'patient_first_name',
+            'patient_last_name',
+            'patient_dob',
+            'provider_name',
+            'provider_npi',
+            'medication_name',
+            'primary_diagnosis',
+            'careplan_created_at',
+            'duplication_warning',  # 目前不实现逻辑，先留空
+        ])
+
+        for cp in queryset:
+            writer.writerow([
+                cp.patient.mrn,
+                cp.patient.first_name,
+                cp.patient.last_name,
+                cp.patient.dob.isoformat(),
+                cp.provider.name,
+                cp.provider.npi,
+                cp.medication_name,
+                cp.primary_diagnosis,
+                cp.created_at.isoformat(),
+                '',  # duplication_warning 占位
+            ])
+
+        return response
+
+    # 返回 JSON 用于前端简单展示
+    items = []
+    for cp in queryset[:50]:  # 最多返回 50 条，足够 MVP 使用
+        items.append({
+            'id': cp.id,
+            'patient_name': f"{cp.patient.first_name} {cp.patient.last_name}",
+            'patient_mrn': cp.patient.mrn,
+            'provider_name': cp.provider.name,
+            'provider_npi': cp.provider.npi,
+            'medication_name': cp.medication_name,
+            'primary_diagnosis': cp.primary_diagnosis,
+            'created_at': cp.created_at.isoformat(),
+            'download_url': f'/download-careplan/{cp.id}/',
+        })
+
+    return JsonResponse({'results': items})

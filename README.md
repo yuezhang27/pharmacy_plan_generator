@@ -10,6 +10,8 @@
 - LLM (OpenAI) 生成 care plan
 - Care plan 状态管理：pending → processing → completed/failed
 - 只有 completed 状态时前端才显示 care plan
+- 生成后的 care plan 可下载为文本文件
+- 支持简单的 care plan 搜索与 CSV 报表导出（用于 pharma/compliance 报告）
 
 ## 运行步骤
 
@@ -78,7 +80,15 @@ docker-compose exec web python manage.py createsuperuser
    - 患者记录（文本内容）
 3. 点击 "Generate Care Plan" 按钮
 4. 等待 LLM 生成 care plan（同步等待）
-5. 生成完成后，页面会显示生成的 care plan
+5. 生成完成后，页面会显示生成的 care plan，并提供「Download Care Plan」按钮下载文本文件
+6. 页面下方的「Search & Export Care Plans」区域可以：
+   - 根据患者姓名 / MRN / 提供者 / 药物 / 诊断进行简单搜索（仅搜索已 completed 的 care plan）
+   - 点击「Export CSV」导出当前搜索条件下的 care plan 报表（CSV），包含：
+     - 患者标识（MRN、姓名、DOB）
+     - 提供者标识（姓名、NPI）
+     - 药物、主要诊断
+     - care plan 生成时间戳
+     - duplication warning 占位列（目前未实现实际逻辑）
 
 ## 项目结构
 
