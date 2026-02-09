@@ -178,8 +178,14 @@ def search_careplans(request):
     - GET /api/search-careplans/?q=xxx&export=1  返回 CSV 报表
     只搜索已 completed 的 care plan。
     """
+
+    # 取 URL 里的 ?q=xxx的搜索词
+    # 其中q=xxx这个是搜索词，是Django的用法
     q = (request.GET.get('q') or '').strip()
 
+    # 构建一个“基础查询条件的 QuerySet”，相当于新建一条还没执行的SQL查询描述
+    # 新建queryset，从CarePlan.objects这个对应的表获取，要求：
+    # - status为completed，join了patient和provider表一起查，结果按照created_at降序排
     queryset = (
         CarePlan.objects
         .filter(status='completed')
@@ -188,6 +194,15 @@ def search_careplans(request):
     )
 
     if q:
+        # 在原查询条件（上面的queryset）上再叠加 WHERE条件，继续构造SQL的条件
+        # 等价于SQL：
+        # WHERE status = 'completed'
+        # AND (
+        # patient.first_name ILIKE '%q%'
+        # OR patient.last_name ILIKE '%q%'
+        # OR patient.mrn ILIKE '%q%'
+        # )
+
         queryset = queryset.filter(
             Q(patient__first_name__icontains=q)
             | Q(patient__last_name__icontains=q)
@@ -197,12 +212,19 @@ def search_careplans(request):
             | Q(medication_name__icontains=q)
             | Q(primary_diagnosis__icontains=q)
         )
+    
+    # -------------------------------------------------
+    # 到这里，上面是queryset查询语句的构建，注意，这里只是构建语句，没有执行
+    # 下面开始，同一个queryset被两个“输出模式”复用：情况1（export=1）导出 CSV；情况2（一定发生）返回 JSON。
+    # -------------------------------------------------
 
-    # 导出 CSV 报表
+    # 情况1，需要export，导出 CSV 报表
     if request.GET.get('export') == '1':
+        # 首先构建response体，并且设定好，要加入csv文件
         response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = 'attachment; filename="careplans_report.csv"'
 
+        # 新建writer用于写入csv，把需要的所有列head都写到csv里
         writer = csv.writer(response)
         writer.writerow([
             'patient_mrn',
@@ -217,6 +239,17 @@ def search_careplans(request):
             'duplication_warning',  # 目前不实现逻辑，先留空
         ])
 
+        # queryset是lazy的！！这里很有趣，上面那些只是构建语句，到for cp in queryset，这里才是真正触发查询
+        # 为什么 for cp in queryset 会触发查询？
+        # 因为：QuerySet 是 lazy（惰性）；for迭代它时，Python 必须拿到数据，因此这才开始真的查询
+        # Django 就在这一步 evaluate queryset → 执行 SQL → 拉数据
+        # 同类“触发执行”的操作还有：
+        # list(queryset)
+        # len(queryset)
+        # bool(queryset)
+        # queryset[:50]
+        
+        # 这样，cp就是查询完过滤剩下的数据，一条条写入csv
         for cp in queryset:
             writer.writerow([
                 cp.patient.mrn,
@@ -233,7 +266,7 @@ def search_careplans(request):
 
         return response
 
-    # 返回 JSON 用于前端简单展示
+    # 情况2(常规情况)逻辑同上，这里是返回 JSON 用于前端渲染展示
     items = []
     for cp in queryset[:50]:  # 最多返回 50 条，足够 MVP 使用
         items.append({
