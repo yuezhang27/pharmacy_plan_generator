@@ -1,0 +1,149 @@
+================================================================================
+Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
+================================================================================
+更新日期: 2026-02-12
+用途: 复盘学习过程、项目开发与系统设计决策
+================================================================================
+
+一、项目来源与目标
+--------------------------------------------------------------------------------
+- 设计依据: design.md (Pharmacy Care Plan Auto-Generator)
+- 业务: 专科药房自动生成药师 care plan，减少人工准备时间
+- 用户: 内部医疗人员（药师/医疗助理），患者不直接访问
+- 当前目标: 最小 MVP，先跑通全流程，逐步学习，体验缺点后再迭代
+
+二、你一步步要求做的事（时间顺序）
+--------------------------------------------------------------------------------
+
+【第 1 步】创建最小 MVP
+- 要求: 前端 + 后端 + PostgreSQL + LLM 生成 care plan 一条 API 跑通
+- 不做: 限制条件、边界检查、warning/error 检查
+- 不做: test cases, websocket, queue, worker, 任何 fancy 技术
+- 不做: Controller-Service-Repository 分层
+- Care plan 状态: pending → processing → completed/failed
+- 只有 completed 时前端才显示
+- 同步方式，生成时等待
+- 技术: Docker, Python, Django, PostgreSQL
+
+【第 2 步】环境变量配置
+- 情况: 你已在系统环境变量配置 OPENAI_API_KEY
+- 要求: 不想用 .env，问是否需要改
+- 决策: 代码优先从系统环境变量读取，.env 可选
+
+【第 3 步】Docker 报错
+- 错误: version  obsolete 警告；dockerDesktopLinuxEngine 找不到
+- 决策: 移除 docker-compose.yml 的 version；说明需先启动 Docker Desktop
+
+【第 4 步】迁移报错 relation "careplan_patient" does not exist
+- 原因: careplan app 的 migrations 未生成
+- 决策: 创建 careplan/migrations/__init__.py；执行 makemigrations careplan + migrate
+
+【第 5 步】Client.__init__() got an unexpected keyword argument 'proxies'
+- 原因: openai 新客户端与当前环境/代理配置不兼容
+- 决策: 先尝试改用 openai.ChatCompletion（老 API）
+
+【第 6 步】openai.ChatCompletion 在 openai>=1.0 不再支持
+- 决策: 一度 pin openai==0.28.1
+
+【第 7 步】坚持使用新版 openai
+- 要求: openai 版本要新，proxies 问题用 pip install -U openai httpx 解决
+- 决策: 恢复 openai 1.x + httpx，使用新版 OpenAI 客户端
+
+【第 8 步】加上下载和搜索功能
+- 依据: design.md 中的 File Download、Reporting Export
+- 要求: 只加下载、搜索，不加 error/warning 检查，不加其它技术
+- 决策: 
+  - 下载: GET /download-careplan/<id>/ 返回 .txt
+  - 搜索: GET /api/search-careplans/?q=xxx 返回 JSON
+  - 导出: GET /api/search-careplans/?q=xxx&export=1 返回 CSV
+  - 前端增加 Download 按钮、Search 区域、Export CSV 按钮
+
+【第 9 步】Mock 数据
+- 要求: 生成 mock data 和 code，用 TablePlus 导入数据库
+- 决策: 创建 scripts/load_mock_data.sql（PostgreSQL 格式），需在 TablePlus 内手动执行
+
+【第 10 步】SQL 类型确认
+- 问题: load_mock_data.sql 是 SQLite 还是 PostgreSQL？
+- 决策: PostgreSQL（与你项目配置一致）
+
+【第 11 步】运行步骤确认
+- 流程: 启动 Docker → docker-compose up -d → migrate → 访问 localhost:8000
+
+【第 12 步】查不到 mock 数据
+- 原因: SQL 脚本需在 TablePlus 中手动执行，不会自动导入
+- 说明: 需在 TablePlus 打开脚本并执行，且连接 pharmacy_db
+
+三、系统设计决策汇总
+--------------------------------------------------------------------------------
+
+3.1 架构与分层
+- 不采用 Controller-Service-Repository 分层
+- 视图里直接写业务逻辑，保持简单
+
+3.2 技术选型
+- 后端: Django + Python
+- 数据库: PostgreSQL
+- 容器: Docker + docker-compose
+- LLM: OpenAI API（openai>=1.x + httpx）
+- 无: websocket, queue, worker, 异步任务
+
+3.3 Care Plan 状态与流程
+- 状态: pending → processing → completed | failed
+- 流程: 创建(pending) → 标记 processing → 调 LLM → 成功(completed) / 失败(failed)
+- 前端: 仅 completed 时展示 care plan 内容及下载
+
+3.4 数据模型
+- Patient: first_name, last_name, mrn(6位唯一), dob
+- Provider: name, npi(10位唯一)
+- CarePlan: patient_id, provider_id, primary_diagnosis, medication_name, 
+  patient_records, status, generated_content 等
+
+3.5 API 设计
+- POST /api/generate-careplan/      生成 care plan（同步）
+- GET  /api/careplan/<id>/          获取单个 care plan（JSON）
+- GET  /download-careplan/<id>/     下载 .txt 文件
+- GET  /api/search-careplans/?q=xxx 搜索（JSON）
+- GET  /api/search-careplans/?q=xxx&export=1  导出 CSV
+
+3.6 校验与错误处理（当前阶段）
+- 不做: 字段校验、边界检查、duplication detection、warning/error 框架
+- 仅做: 必要的异常捕获，返回简单错误信息
+
+3.7 环境变量
+- OPENAI_API_KEY: 优先系统环境变量，其次 .env
+- Docker: 通过 docker-compose environment 传递 ${OPENAI_API_KEY}
+
+3.8 Mock 数据
+- 格式: PostgreSQL SQL
+- 导入方式: 在 TablePlus 中手动执行 scripts/load_mock_data.sql
+- 数据: 5 Patient, 3 Provider, 5 CarePlan（均为 completed）
+
+四、当前项目结构
+--------------------------------------------------------------------------------
+pharmacy_plan_generator/
+├── careplan/                 # Django app
+│   ├── models.py            # Patient, Provider, CarePlan
+│   ├── views.py             # index, generate_careplan, get_careplan, 
+│   │                        # download_careplan, search_careplans
+│   ├── llm_service.py       # OpenAI 生成 care plan
+│   ├── templates/           # index.html（表单 + 搜索 + 下载）
+│   └── migrations/
+├── pharmacy_plan/           # 项目配置
+├── scripts/
+│   ├── load_mock_data.sql   # Mock 数据（PostgreSQL）
+│   └── README.md
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+├── design.md                # 原始设计文档
+└── progress_summary.txt     # 本文件
+
+五、design.md 中尚未实现的部分（后续可迭代）
+--------------------------------------------------------------------------------
+- 输入校验（MRN 6 位、NPI 10 位、ICD-10 等）
+- Duplication detection（patient/order/provider）
+- Error vs Warning 行为区分
+- PDF 解析（Patient Records）
+- duplication_warning 在报表中的实际逻辑
+
+================================================================================
