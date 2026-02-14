@@ -35,5 +35,23 @@ services:
       - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
 
+  celery_worker:
+    build: .
+    command: celery -A pharmacy_plan worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+    environment:
+      - POSTGRES_DB=pharmacy_db
+      - POSTGRES_USER=pharmacy_user
+      - POSTGRES_PASSWORD=pharmacy_pass
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
 volumes:
   postgres_data:

@@ -3,12 +3,11 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db.models import Q
-from django.conf import settings
 import csv
 import json
 from datetime import datetime
-import redis
 from .models import Patient, Provider, CarePlan
+from .tasks import generate_careplan_task
 
 # Django框架下，加载主页面
 # 和urls.py里path('', views.index, name='index') 连起来看，就是
@@ -62,9 +61,8 @@ def generate_careplan(request):
             status='pending'
         )
 
-        # 把 careplan_id 放进 Redis 队列（后续 worker 会消费）
-        r = redis.from_url(settings.REDIS_URL)
-        r.rpush(settings.CAREPLAN_QUEUE_KEY, str(careplan.id))
+        # 投递 Celery 异步任务
+        generate_careplan_task.delay(careplan.id)
 
         # 立即返回，不等待 LLM
         return JsonResponse({

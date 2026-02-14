@@ -76,8 +76,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # OPENAI_API_KEY 可以从系统环境变量或 .env 文件读取
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
-# Redis（用于 care plan 异步队列）
+# Redis（Celery broker + result backend）
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
 REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
-CAREPLAN_QUEUE_KEY = 'careplan_queue'
+
+# Celery
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
