@@ -1,7 +1,7 @@
 ================================================================================
 Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 ================================================================================
-更新日期: 2026-02-13
+更新日期: 2026-02-14
 用途: 复盘学习过程、项目开发与系统设计决策
 ================================================================================
 
@@ -83,6 +83,26 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   - 前端: 成功时只显示「已收到，careplan_id: xxx」，不展示内容、不展示下载
   - Redis 队列 key: careplan_queue
 
+【第 14 步】手写 Worker
+- 要求: 手写 function 处理 Redis 队列，不用 Celery；体验前端不自动更新的痛点
+- 决策: 创建 management command run_careplan_worker，BLPOP 拉任务 → 调 LLM → 存 DB
+
+【第 15 步】用 Celery 替换手写 Worker
+- 要求: Celery 异步任务；失败重试最多 3 次、指数退避；更新 DB 状态；不 polling/SSE/自动更新前端
+- 决策:
+  - 新增 careplan/tasks.py：generate_careplan_task（@shared_task, max_retries=3, countdown=2^retries）
+  - views: 用 task.delay(careplan_id) 替代 Redis rpush
+  - docker-compose 新增 celery_worker 服务
+  - 移除 CAREPLAN_QUEUE_KEY，Celery 用 Redis 作为 broker
+
+【第 16 步】Docker 构建失败
+- 错误: celery[redis] 导致 pip install 失败
+- 决策: 改为 celery（不加 [redis] extra，redis 已在 requirements 中）
+
+【第 17 步】用户发现：Search 即可看到新完成的 care plan
+- 结论: 不需要整页刷新；点「Search Care Plans」会发起新请求查 DB，即可看到 Celery 已完成的 care plan
+- 要点: 「不自动更新」指页面上无轮询/推送；任何触发新请求的操作（Search、F5、访问 /api/careplan/<id>/）都能拿到最新数据
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -93,16 +113,16 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 3.2 技术选型
 - 后端: Django + Python
 - 数据库: PostgreSQL
-- 队列: Redis（careplan_queue，list 结构）
-- 容器: Docker + docker-compose（db + redis + web）
-- LLM: OpenAI API（openai>=1.x + httpx），当前由 worker 调用（worker 尚未实现）
-- 无: websocket, 主动通知前端完成
+- 队列: Celery + Redis（broker + result backend）
+- 容器: Docker + docker-compose（db + redis + web + celery_worker）
+- LLM: OpenAI API（openai>=1.x + httpx），由 Celery worker 调用
+- 无: websocket, 轮询, SSE, 主动推送前端完成
 
 3.3 Care Plan 状态与流程
 - 状态: pending → processing → completed | failed
-- 当前 API 流程: 创建(pending) → rpush careplan_id 到 Redis → 立即返回「已收到」
-- 后续 worker 流程（未实现）: 从队列取 id → 标记 processing → 调 LLM → 成功(completed) / 失败(failed)
-- 前端: 提交后只显示「已收到，careplan_id: xxx」；不主动轮询或推送完成状态
+- API 流程: 创建(pending) → task.delay(careplan_id) → 立即返回「已收到」
+- Celery 流程: 取任务 → 标记 processing → 调 LLM → 成功(completed) / 失败(failed)；失败时重试最多 3 次，指数退避
+- 前端: 提交后只显示「已收到，careplan_id: xxx」；用户需主动触发新请求（Search、F5 等）才能看到完成结果
 
 3.4 数据模型
 - Patient: first_name, last_name, mrn(6位唯一), dob
@@ -111,7 +131,7 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   patient_records, status, generated_content 等
 
 3.5 API 设计
-- POST /api/generate-careplan/      提交 care plan 请求（异步：存 DB + 入队，立即返回）
+- POST /api/generate-careplan/      提交 care plan 请求（异步：存 DB + Celery 入队，立即返回）
 - GET  /api/careplan/<id>/          获取单个 care plan（JSON，仅 completed 有内容）
 - GET  /download-careplan/<id>/     下载 .txt 文件
 - GET  /api/search-careplans/?q=xxx 搜索（JSON）
@@ -138,16 +158,20 @@ pharmacy_plan_generator/
 │   ├── models.py            # Patient, Provider, CarePlan
 │   ├── views.py             # index, generate_careplan, get_careplan, 
 │   │                        # download_careplan, search_careplans
-│   ├── llm_service.py       # OpenAI 生成 care plan（当前由 worker 调用，worker 未实现）
+│   ├── tasks.py             # Celery 任务 generate_careplan_task
+│   ├── llm_service.py       # OpenAI 生成 care plan（由 Celery worker 调用）
 │   ├── templates/           # index.html（表单 + 搜索 + 下载）
+│   ├── management/commands/ # run_careplan_worker（手写版，已被 Celery 替代）
 │   └── migrations/
-├── pharmacy_plan/           # 项目配置
+├── pharmacy_plan/            # 项目配置
+│   ├── celery.py            # Celery app 配置
+│   └── __init__.py          # 导入 celery_app
 ├── scripts/
 │   ├── load_mock_data.sql   # Mock 数据（PostgreSQL）
 │   └── README.md
-├── docker-compose.yml       # db + redis + web
+├── docker-compose.yml       # db + redis + web + celery_worker
 ├── Dockerfile
-├── requirements.txt         # 含 redis
+├── requirements.txt         # 含 celery, redis
 ├── design.md                # 原始设计文档
 └── progress_summary.txt     # 本文件
 
@@ -159,9 +183,13 @@ pharmacy_plan_generator/
 - PDF 解析（Patient Records）
 - duplication_warning 在报表中的实际逻辑
 
-六、Redis 异步改造后尚未实现的部分
+六、Celery 改造后尚未实现的部分
 --------------------------------------------------------------------------------
-- Worker: 从 Redis careplan_queue 取 careplan_id，调 llm_service 生成，更新 DB 状态
-- 前端获知完成: 轮询 /api/careplan/<id>/ 或 WebSocket 推送（你后续学习）
+- 前端获知完成: 轮询 /api/careplan/<id>/ 或 WebSocket/SSE 推送（你后续学习）
+
+七、今日问答与发现
+--------------------------------------------------------------------------------
+- 不需要整页刷新也能看到新完成的 care plan：点「Search Care Plans」会发起新请求查 DB，即可看到结果
+- 「不自动更新」的含义：页面上无轮询、无推送；任何触发新 HTTP 请求的操作都能拿到最新数据
 
 ================================================================================
