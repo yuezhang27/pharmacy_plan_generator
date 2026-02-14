@@ -1,7 +1,7 @@
 ================================================================================
 Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 ================================================================================
-更新日期: 2026-02-12
+更新日期: 2026-02-13
 用途: 复盘学习过程、项目开发与系统设计决策
 ================================================================================
 
@@ -73,6 +73,16 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 原因: SQL 脚本需在 TablePlus 中手动执行，不会自动导入
 - 说明: 需在 TablePlus 打开脚本并执行，且连接 pharmacy_db
 
+【第 13 步】改为异步：加 Redis 队列
+- 背景: 同步调 LLM 很慢，用户提交后需长时间等待
+- 要求: 加 Redis 容器；API 存 DB + 放队列后立即返回；不写 worker 处理队列；不主动告知前端完成
+- 决策:
+  - 新增 redis 服务（redis:7-alpine，端口 6379）
+  - generate_careplan: 创建 CarePlan(status='pending') → rpush careplan_id 到 Redis 队列 → 立即返回 {"message":"已收到","careplan_id":xxx}
+  - 移除同步 LLM 调用（worker 后续再写）
+  - 前端: 成功时只显示「已收到，careplan_id: xxx」，不展示内容、不展示下载
+  - Redis 队列 key: careplan_queue
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -83,14 +93,16 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 3.2 技术选型
 - 后端: Django + Python
 - 数据库: PostgreSQL
-- 容器: Docker + docker-compose
-- LLM: OpenAI API（openai>=1.x + httpx）
-- 无: websocket, queue, worker, 异步任务
+- 队列: Redis（careplan_queue，list 结构）
+- 容器: Docker + docker-compose（db + redis + web）
+- LLM: OpenAI API（openai>=1.x + httpx），当前由 worker 调用（worker 尚未实现）
+- 无: websocket, 主动通知前端完成
 
 3.3 Care Plan 状态与流程
 - 状态: pending → processing → completed | failed
-- 流程: 创建(pending) → 标记 processing → 调 LLM → 成功(completed) / 失败(failed)
-- 前端: 仅 completed 时展示 care plan 内容及下载
+- 当前 API 流程: 创建(pending) → rpush careplan_id 到 Redis → 立即返回「已收到」
+- 后续 worker 流程（未实现）: 从队列取 id → 标记 processing → 调 LLM → 成功(completed) / 失败(failed)
+- 前端: 提交后只显示「已收到，careplan_id: xxx」；不主动轮询或推送完成状态
 
 3.4 数据模型
 - Patient: first_name, last_name, mrn(6位唯一), dob
@@ -99,8 +111,8 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   patient_records, status, generated_content 等
 
 3.5 API 设计
-- POST /api/generate-careplan/      生成 care plan（同步）
-- GET  /api/careplan/<id>/          获取单个 care plan（JSON）
+- POST /api/generate-careplan/      提交 care plan 请求（异步：存 DB + 入队，立即返回）
+- GET  /api/careplan/<id>/          获取单个 care plan（JSON，仅 completed 有内容）
 - GET  /download-careplan/<id>/     下载 .txt 文件
 - GET  /api/search-careplans/?q=xxx 搜索（JSON）
 - GET  /api/search-careplans/?q=xxx&export=1  导出 CSV
@@ -111,6 +123,7 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 
 3.7 环境变量
 - OPENAI_API_KEY: 优先系统环境变量，其次 .env
+- REDIS_HOST, REDIS_PORT: 用于连接 Redis（默认 redis:6379）
 - Docker: 通过 docker-compose environment 传递 ${OPENAI_API_KEY}
 
 3.8 Mock 数据
@@ -125,16 +138,16 @@ pharmacy_plan_generator/
 │   ├── models.py            # Patient, Provider, CarePlan
 │   ├── views.py             # index, generate_careplan, get_careplan, 
 │   │                        # download_careplan, search_careplans
-│   ├── llm_service.py       # OpenAI 生成 care plan
+│   ├── llm_service.py       # OpenAI 生成 care plan（当前由 worker 调用，worker 未实现）
 │   ├── templates/           # index.html（表单 + 搜索 + 下载）
 │   └── migrations/
 ├── pharmacy_plan/           # 项目配置
 ├── scripts/
 │   ├── load_mock_data.sql   # Mock 数据（PostgreSQL）
 │   └── README.md
-├── docker-compose.yml
+├── docker-compose.yml       # db + redis + web
 ├── Dockerfile
-├── requirements.txt
+├── requirements.txt         # 含 redis
 ├── design.md                # 原始设计文档
 └── progress_summary.txt     # 本文件
 
@@ -145,5 +158,10 @@ pharmacy_plan_generator/
 - Error vs Warning 行为区分
 - PDF 解析（Patient Records）
 - duplication_warning 在报表中的实际逻辑
+
+六、Redis 异步改造后尚未实现的部分
+--------------------------------------------------------------------------------
+- Worker: 从 Redis careplan_queue 取 careplan_id，调 llm_service 生成，更新 DB 状态
+- 前端获知完成: 轮询 /api/careplan/<id>/ 或 WebSocket 推送（你后续学习）
 
 ================================================================================
