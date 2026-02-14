@@ -3,11 +3,12 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db.models import Q
+from django.conf import settings
 import csv
 import json
 from datetime import datetime
+import redis
 from .models import Patient, Provider, CarePlan
-from .llm_service import generate_careplan_with_llm
 
 # Django框架下，加载主页面
 # 和urls.py里path('', views.index, name='index') 连起来看，就是
@@ -49,8 +50,7 @@ def generate_careplan(request):
             defaults={'name': data['provider_name']}
         )
 
-        # Create care plan with pending status
-        # 这里目前的处理是，在初始化careplan对象的时候，status先默认设置成pending
+        # Create care plan with pending status（异步：只存 DB，不调 LLM）
         careplan = CarePlan.objects.create(
             patient=patient,
             provider=provider,
@@ -62,51 +62,17 @@ def generate_careplan(request):
             status='pending'
         )
 
-        # Update to processing
-        # 刚才初始化完成了careplan，所以这里把status改成processing
-        careplan.status = 'processing'
-        # model.save() 就是把 当前CarePlan实例同步到数据库：insert或者update。这里是对应insert
-        careplan.save()
+        # 把 careplan_id 放进 Redis 队列（后续 worker 会消费）
+        r = redis.from_url(settings.REDIS_URL)
+        r.rpush(settings.CAREPLAN_QUEUE_KEY, str(careplan.id))
 
-        # Generate care plan with LLM
-        # 前面已经生成careplan的实例，这里就可以调用generate_careplan_with_llm
-        # 生成careplan，把llm生成的careplan，存到generated_content这个变量
-        try:
-            generated_content = generate_careplan_with_llm(
-                patient=patient,
-                provider=provider,
-                primary_diagnosis=careplan.primary_diagnosis,
-                additional_diagnosis=careplan.additional_diagnosis,
-                medication_name=careplan.medication_name,
-                medication_history=careplan.medication_history,
-                patient_records=careplan.patient_records
-            )
-            
-            # 已经生成careplan了，所以改status为completed
-            careplan.status = 'completed'
-            # 把这个生成的careplan的内容（llm返回的内容）传递给careplan变量
-            careplan.generated_content = generated_content
-            # 更新数据库，这样数据库里就有刚才的plan了
-            careplan.save()
-            
-            # 处理完成，返回response给前端
-            return JsonResponse({
-                'success': True,
-                'careplan_id': careplan.id,
-                'status': careplan.status,
-                'content': generated_content
-            })
-        except Exception as e:
-            careplan.status = 'failed'
-            careplan.error_message = str(e)
-            careplan.save()
-            
-            return JsonResponse({
-                'success': False,
-                'error': str(e),
-                'careplan_id': careplan.id,
-                'status': careplan.status
-            }, status=500)
+        # 立即返回，不等待 LLM
+        return JsonResponse({
+            'success': True,
+            'message': '已收到',
+            'careplan_id': careplan.id,
+            'status': careplan.status,
+        })
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)

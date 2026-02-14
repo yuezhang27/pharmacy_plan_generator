@@ -204,14 +204,15 @@
         </form>
 
         <div class="loading" id="loading">
-            <strong>Generating care plan...</strong> Please wait, this may take a moment.
+            <strong>提交中...</strong>
         </div>
 
         <div class="error" id="error"></div>
 
         <div class="careplan-result" id="careplanResult">
-            <h2>Generated Care Plan</h2>
-            <div class="careplan-content" id="careplanContent"></div>
+            <h2>提交结果</h2>
+            <p id="submitMessage"></p>
+            <div class="careplan-content" id="careplanContent" style="display:none;"></div>
             <div class="careplan-actions" id="careplanActions" style="display:none;">
                 <a id="downloadLink" href="#" target="_blank">
                     <button type="button" class="secondary-button">Download Care Plan (.txt)</button>
@@ -264,6 +265,7 @@
             const careplanContent = document.getElementById('careplanContent');
             const careplanActions = document.getElementById('careplanActions');
             const downloadLink = document.getElementById('downloadLink');
+            const submitMessage = document.getElementById('submitMessage');
             
             // Reset UI
             submitBtn.disabled = true;
@@ -271,6 +273,7 @@
             error.style.display = 'none';
             careplanResult.style.display = 'none';
             careplanActions.style.display = 'none';
+            careplanContent.style.display = 'none';
             
             // Collect form data
             const formData = {
@@ -298,17 +301,12 @@
                 
                 const data = await response.json();
                 
-                if (data.success && data.status === 'completed') {
-                    careplanContent.textContent = data.content;
+                if (data.success) {
+                    submitMessage.textContent = data.message + '，careplan_id: ' + data.careplan_id;
                     careplanResult.style.display = 'block';
-                    // 设置下载链接
-                    if (data.careplan_id) {
-                        downloadLink.href = '/download-careplan/' + data.careplan_id + '/';
-                        careplanActions.style.display = 'block';
-                    }
                     loading.style.display = 'none';
                 } else {
-                    throw new Error(data.error || 'Failed to generate care plan');
+                    throw new Error(data.error || 'Failed to submit');
                 }
             } catch (err) {
                 error.textContent = 'Error: ' + err.message;
