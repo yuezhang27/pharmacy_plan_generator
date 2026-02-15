@@ -1,7 +1,7 @@
 ================================================================================
 Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 ================================================================================
-更新日期: 2026-02-14
+更新日期: 2026-02-15
 用途: 复盘学习过程、项目开发与系统设计决策
 ================================================================================
 
@@ -103,6 +103,19 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 结论: 不需要整页刷新；点「Search Care Plans」会发起新请求查 DB，即可看到 Celery 已完成的 care plan
 - 要点: 「不自动更新」指页面上无轮询/推送；任何触发新请求的操作（Search、F5、访问 /api/careplan/<id>/）都能拿到最新数据
 
+【第 18 步】实现 Polling
+- 要求: Worker 完成后前端能获知；用 Polling 实现
+- 决策:
+  - 后端: GET /api/careplan/<id>/status/ 返回 status 和 content（若 completed）或 error（若 failed）
+  - 前端: 提交后拿到 careplan_id，每 3 秒轮询；completed 停止并显示结果；failed 停止并显示错误
+
+【第 19 步】Mock LLM
+- 要求: 开发/测试时不真调 LLM，用 mock 代替；能跑通 Worker 全流程
+- 决策:
+  - llm_service: 新增 generate_careplan_mock（返回固定文本）、generate_careplan（统一入口，按配置切换）
+  - 配置: USE_MOCK_LLM=1 用 mock，=0 用真实 LLM；默认 1
+  - 切换: 环境变量 USE_MOCK_LLM，docker-compose 传 ${USE_MOCK_LLM:-1}
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -115,14 +128,14 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 数据库: PostgreSQL
 - 队列: Celery + Redis（broker + result backend）
 - 容器: Docker + docker-compose（db + redis + web + celery_worker）
-- LLM: OpenAI API（openai>=1.x + httpx），由 Celery worker 调用
-- 无: websocket, 轮询, SSE, 主动推送前端完成
+- LLM: OpenAI API（openai>=1.x + httpx），由 Celery worker 调用；支持 USE_MOCK_LLM 切换 mock
+- 前端获知完成: Polling（每 3 秒调 /api/careplan/<id>/status/）
 
 3.3 Care Plan 状态与流程
 - 状态: pending → processing → completed | failed
 - API 流程: 创建(pending) → task.delay(careplan_id) → 立即返回「已收到」
-- Celery 流程: 取任务 → 标记 processing → 调 LLM → 成功(completed) / 失败(failed)；失败时重试最多 3 次，指数退避
-- 前端: 提交后只显示「已收到，careplan_id: xxx」；用户需主动触发新请求（Search、F5 等）才能看到完成结果
+- Celery 流程: 取任务 → 标记 processing → 调 LLM（或 mock）→ 成功(completed) / 失败(failed)；失败时重试最多 3 次，指数退避
+- 前端: 提交后轮询 status API；completed 时显示结果和下载；failed 时显示错误
 
 3.4 数据模型
 - Patient: first_name, last_name, mrn(6位唯一), dob
@@ -133,6 +146,7 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 3.5 API 设计
 - POST /api/generate-careplan/      提交 care plan 请求（异步：存 DB + Celery 入队，立即返回）
 - GET  /api/careplan/<id>/          获取单个 care plan（JSON，仅 completed 有内容）
+- GET  /api/careplan/<id>/status/   轮询用：返回 status、content（completed 时）、error（failed 时）
 - GET  /download-careplan/<id>/     下载 .txt 文件
 - GET  /api/search-careplans/?q=xxx 搜索（JSON）
 - GET  /api/search-careplans/?q=xxx&export=1  导出 CSV
@@ -143,10 +157,15 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 
 3.7 环境变量
 - OPENAI_API_KEY: 优先系统环境变量，其次 .env
+- USE_MOCK_LLM: 1=mock LLM（不调 OpenAI），0=真实 LLM；默认 1
 - REDIS_HOST, REDIS_PORT: 用于连接 Redis（默认 redis:6379）
-- Docker: 通过 docker-compose environment 传递 ${OPENAI_API_KEY}
+- Docker: 通过 docker-compose environment 传递 ${OPENAI_API_KEY}、${USE_MOCK_LLM:-1}
 
-3.8 Mock 数据
+3.8 LLM 模式切换
+- Mock 模式（开发/测试）: USE_MOCK_LLM=1 或不设置；generate_careplan_mock 返回固定文本
+- Prod 模式: USE_MOCK_LLM=0；调用 OpenAI API
+
+3.9 数据库 Mock 数据
 - 格式: PostgreSQL SQL
 - 导入方式: 在 TablePlus 中手动执行 scripts/load_mock_data.sql
 - 数据: 5 Patient, 3 Provider, 5 CarePlan（均为 completed）
@@ -157,9 +176,10 @@ pharmacy_plan_generator/
 ├── careplan/                 # Django app
 │   ├── models.py            # Patient, Provider, CarePlan
 │   ├── views.py             # index, generate_careplan, get_careplan, 
-│   │                        # download_careplan, search_careplans
+│   │                        # careplan_status, download_careplan, search_careplans
 │   ├── tasks.py             # Celery 任务 generate_careplan_task
-│   ├── llm_service.py       # OpenAI 生成 care plan（由 Celery worker 调用）
+│   ├── llm_service.py       # generate_careplan（统一入口）、generate_careplan_mock、
+│   │                        # generate_careplan_with_llm（真实 OpenAI）
 │   ├── templates/           # index.html（表单 + 搜索 + 下载）
 │   ├── management/commands/ # run_careplan_worker（手写版，已被 Celery 替代）
 │   └── migrations/
@@ -183,13 +203,15 @@ pharmacy_plan_generator/
 - PDF 解析（Patient Records）
 - duplication_warning 在报表中的实际逻辑
 
-六、Celery 改造后尚未实现的部分
+六、尚未实现的部分
 --------------------------------------------------------------------------------
-- 前端获知完成: 轮询 /api/careplan/<id>/ 或 WebSocket/SSE 推送（你后续学习）
+- WebSocket/SSE 推送完成状态（当前用 Polling）
 
 七、今日问答与发现
 --------------------------------------------------------------------------------
 - 不需要整页刷新也能看到新完成的 care plan：点「Search Care Plans」会发起新请求查 DB，即可看到结果
 - 「不自动更新」的含义：页面上无轮询、无推送；任何触发新 HTTP 请求的操作都能拿到最新数据
+- Polling 实现后：前端提交后每 3 秒轮询 status API，completed/failed 时自动停止并展示
+- Mock LLM：USE_MOCK_LLM=1 开发，=0 生产；可跑通 Redis → Worker → DB 全流程而不消耗 API
 
 ================================================================================
