@@ -204,13 +204,13 @@
         </form>
 
         <div class="loading" id="loading">
-            <strong>提交中...</strong>
+            <strong id="loadingText">提交中...</strong>
         </div>
 
         <div class="error" id="error"></div>
 
         <div class="careplan-result" id="careplanResult">
-            <h2>提交结果</h2>
+            <h2 id="resultTitle">提交结果</h2>
             <p id="submitMessage"></p>
             <div class="careplan-content" id="careplanContent" style="display:none;"></div>
             <div class="careplan-actions" id="careplanActions" style="display:none;">
@@ -255,10 +255,17 @@
     </div>
 
     <script>
-        document.getElementById('careplanForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const submitBtn = document.getElementById('submitBtn');
+        let pollInterval = null;
+
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+
+        async function pollCareplanStatus(careplanId) {
+            const loadingText = document.getElementById('loadingText');
             const loading = document.getElementById('loading');
             const error = document.getElementById('error');
             const careplanResult = document.getElementById('careplanResult');
@@ -266,16 +273,70 @@
             const careplanActions = document.getElementById('careplanActions');
             const downloadLink = document.getElementById('downloadLink');
             const submitMessage = document.getElementById('submitMessage');
+            const resultTitle = document.getElementById('resultTitle');
+
+            const check = async () => {
+                try {
+                    const res = await fetch('/api/careplan/' + careplanId + '/status/');
+                    const data = await res.json();
+
+                    if (data.status === 'completed') {
+                        stopPolling();
+                        loading.style.display = 'none';
+                        resultTitle.textContent = 'Generated Care Plan';
+                        submitMessage.textContent = 'Care plan 已生成完成';
+                        careplanContent.textContent = data.content || '';
+                        careplanContent.style.display = 'block';
+                        downloadLink.href = '/download-careplan/' + careplanId + '/';
+                        careplanActions.style.display = 'block';
+                        careplanResult.style.display = 'block';
+                        return;
+                    }
+
+                    if (data.status === 'failed') {
+                        stopPolling();
+                        loading.style.display = 'none';
+                        error.textContent = '生成失败: ' + (data.error || 'Unknown error');
+                        error.style.display = 'block';
+                        return;
+                    }
+
+                    loadingText.textContent = '生成中... (status: ' + data.status + ')';
+                } catch (err) {
+                    stopPolling();
+                    loading.style.display = 'none';
+                    error.textContent = '轮询出错: ' + err.message;
+                    error.style.display = 'block';
+                }
+            };
+
+            check();
+            pollInterval = setInterval(check, 3000);
+        }
+
+        document.getElementById('careplanForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            stopPolling();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const loadingText = document.getElementById('loadingText');
+            const error = document.getElementById('error');
+            const careplanResult = document.getElementById('careplanResult');
+            const careplanContent = document.getElementById('careplanContent');
+            const careplanActions = document.getElementById('careplanActions');
+            const downloadLink = document.getElementById('downloadLink');
+            const submitMessage = document.getElementById('submitMessage');
+            const resultTitle = document.getElementById('resultTitle');
             
-            // Reset UI
             submitBtn.disabled = true;
             loading.style.display = 'block';
+            loadingText.textContent = '提交中...';
             error.style.display = 'none';
             careplanResult.style.display = 'none';
             careplanActions.style.display = 'none';
             careplanContent.style.display = 'none';
             
-            // Collect form data
             const formData = {
                 patient_first_name: document.getElementById('patient_first_name').value,
                 patient_last_name: document.getElementById('patient_last_name').value,
@@ -293,18 +354,15 @@
             try {
                 const response = await fetch('/api/generate-careplan/', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    submitMessage.textContent = data.message + '，careplan_id: ' + data.careplan_id;
-                    careplanResult.style.display = 'block';
-                    loading.style.display = 'none';
+                    loadingText.textContent = '已收到，等待生成...';
+                    pollCareplanStatus(data.careplan_id);
                 } else {
                     throw new Error(data.error || 'Failed to submit');
                 }

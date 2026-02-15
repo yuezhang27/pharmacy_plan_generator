@@ -108,6 +108,26 @@ def get_careplan(request, careplan_id):
     except CarePlan.DoesNotExist:
         return JsonResponse({'error': 'Care plan not found'}, status=404)
 
+
+def careplan_status(request, careplan_id):
+    """
+    GET /api/careplan/<id>/status/
+    返回 status 和 content（若 completed），供前端轮询
+    """
+    try:
+        careplan = CarePlan.objects.get(id=careplan_id)
+    except CarePlan.DoesNotExist:
+        return JsonResponse({'error': 'Care plan not found'}, status=404)
+
+    data = {'status': careplan.status}
+    if careplan.status == 'completed':
+        data['content'] = careplan.generated_content
+    elif careplan.status == 'failed':
+        data['error'] = careplan.error_message or 'Generation failed'
+
+    return JsonResponse(data)
+
+
 """
 用careplan_id获取careplan，并放入txt文件，放入response返回
 """

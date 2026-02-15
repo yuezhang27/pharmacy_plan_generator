@@ -15,6 +15,7 @@ urlpatterns = [
     path('', views.index, name='index'),
     path('api/generate-careplan/', views.generate_careplan, name='generate_careplan'),
     path('api/careplan/<int:careplan_id>/', views.get_careplan, name='get_careplan'),
+    path('api/careplan/<int:careplan_id>/status/', views.careplan_status, name='careplan_status'),
     path('download-careplan/<int:careplan_id>/', views.download_careplan, name='download_careplan'),
     path('api/search-careplans/', views.search_careplans, name='search_careplans'),
 ]
