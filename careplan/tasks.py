@@ -4,7 +4,7 @@ Celery 异步任务：调用 LLM 生成 Care Plan，更新数据库
 """
 from celery import shared_task
 from careplan.models import CarePlan
-from careplan.llm_service import generate_careplan_with_llm
+from careplan.llm_service import generate_careplan
 
 
 @shared_task(bind=True, max_retries=3)
@@ -25,7 +25,7 @@ def generate_careplan_task(self, careplan_id):
     careplan.save()
 
     try:
-        content = generate_careplan_with_llm(
+        content = generate_careplan(
             patient=careplan.patient,
             provider=careplan.provider,
             primary_diagnosis=careplan.primary_diagnosis,

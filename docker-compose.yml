@@ -34,6 +34,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - USE_MOCK_LLM=${USE_MOCK_LLM:-1}
 
   celery_worker:
     build: .
@@ -52,6 +53,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - USE_MOCK_LLM=${USE_MOCK_LLM:-1}
 
 volumes:
   postgres_data:

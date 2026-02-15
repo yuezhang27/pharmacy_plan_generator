@@ -76,6 +76,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # OPENAI_API_KEY 可以从系统环境变量或 .env 文件读取
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
+# LLM 模式：USE_MOCK_LLM=1 用 mock（不调 OpenAI），=0 用真实 LLM
+USE_MOCK_LLM = os.getenv('USE_MOCK_LLM', '1') == '1'
+
 # Redis（Celery broker + result backend）
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
