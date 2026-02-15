@@ -125,3 +125,15 @@ docker-compose down
 ```bash
 docker-compose down -v
 ```
+
+---
+## Mock ENV
+### 方式 1：不设置，默认 mock
+`docker-compose up -d`
+### 方式 2：显式设置`USE_MOCK_LLM=1 docker-compose up -d`
+
+Prod 模式（真实调用 LLM）
+
+### 方式 1：启动时设置
+
+`USE_MOCK_LLM=0 docker-compose up -d`
