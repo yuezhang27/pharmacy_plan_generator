@@ -8,25 +8,46 @@ from django.http import HttpResponse
 
 from .models import Patient, Provider, CarePlan
 from .tasks import generate_careplan_task
+from .duplication_detection import (
+    check_provider,
+    check_patient,
+    check_order,
+    DuplicationError,
+)
 
 
 def create_careplan(data):
     """
     创建 CarePlan，投递 Celery 任务，返回提交结果
+    先执行重复检测，通过后再创建
     """
-    patient, _ = Patient.objects.get_or_create(
-        mrn=data['patient_mrn'],
-        defaults={
-            'first_name': data['patient_first_name'],
-            'last_name': data['patient_last_name'],
-            'dob': datetime.strptime(data['patient_dob'], '%Y-%m-%d').date()
-        }
-    )
+    confirm = data.get('confirm') is True
 
-    provider, _ = Provider.objects.get_or_create(
-        npi=data['provider_npi'],
-        defaults={'name': data['provider_name']}
+    provider = check_provider(data['provider_npi'], data['provider_name'])
+    if provider is None:
+        provider, _ = Provider.objects.get_or_create(
+            npi=data['provider_npi'],
+            defaults={'name': data['provider_name']}
+        )
+
+    patient = check_patient(
+        data['patient_mrn'],
+        data['patient_first_name'],
+        data['patient_last_name'],
+        data['patient_dob'],
+        confirm=confirm
     )
+    if patient is None:
+        patient, _ = Patient.objects.get_or_create(
+            mrn=data['patient_mrn'],
+            defaults={
+                'first_name': data['patient_first_name'],
+                'last_name': data['patient_last_name'],
+                'dob': datetime.strptime(data['patient_dob'], '%Y-%m-%d').date()
+            }
+        )
+
+    check_order(patient, data['medication_name'], confirm=confirm)
 
     careplan = CarePlan.objects.create(
         patient=patient,

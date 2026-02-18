@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from . import services
 from . import serializers
+from .duplication_detection import DuplicationError
 
 
 def index(request):
@@ -22,6 +23,8 @@ def generate_careplan(request):
         data = serializers.parse_generate_careplan_request(request.body)
         result = services.create_careplan(data)
         return JsonResponse(result)
+    except DuplicationError as e:
+        return JsonResponse({'error': e.message}, status=e.status_code)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
 

@@ -348,28 +348,42 @@
                 additional_diagnosis: document.getElementById('additional_diagnosis').value,
                 medication_name: document.getElementById('medication_name').value,
                 medication_history: document.getElementById('medication_history').value,
-                patient_records: document.getElementById('patient_records').value
+                patient_records: document.getElementById('patient_records').value,
+                confirm: false
             };
             
-            try {
+            async function doSubmit(confirmFlag) {
+                formData.confirm = confirmFlag;
                 const response = await fetch('/api/generate-careplan/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
-                
                 const data = await response.json();
-                
                 if (data.success) {
                     loadingText.textContent = '已收到，等待生成...';
                     pollCareplanStatus(data.careplan_id);
                 } else {
                     throw new Error(data.error || 'Failed to submit');
                 }
+            }
+            
+            try {
+                await doSubmit(false);
             } catch (err) {
-                error.textContent = 'Error: ' + err.message;
-                error.style.display = 'block';
-                loading.style.display = 'none';
+                if (err.message.includes('请确认后继续') && confirm(err.message + '\n\n点击确定以确认继续提交。')) {
+                    try {
+                        await doSubmit(true);
+                    } catch (e) {
+                        error.textContent = 'Error: ' + e.message;
+                        error.style.display = 'block';
+                        loading.style.display = 'none';
+                    }
+                } else {
+                    error.textContent = 'Error: ' + err.message;
+                    error.style.display = 'block';
+                    loading.style.display = 'none';
+                }
             } finally {
                 submitBtn.disabled = false;
             }
