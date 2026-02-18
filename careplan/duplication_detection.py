@@ -1,19 +1,14 @@
 """
 重复检测逻辑
-- Provider: NPI 相同 + 名字不同 → 必须阻止
-- Patient: MRN 相同 + 名字/DOB 不同 → 警告；名字+DOB 相同 + MRN 不同 → 警告
+- Provider: NPI 相同 + 名字不同 → 必须阻止 (BlockError)
+- Patient: MRN 相同 + 名字/DOB 不同 → 警告 (WarningException)；名字+DOB 相同 + MRN 不同 → 警告
 - Order (CarePlan): 同一患者 + 同一药物 + 同一天 → 必须阻止；不同天 → 警告（confirm 可跳过）
 """
 from datetime import date, datetime
 
+from pharmacy_plan.exceptions import BlockError, WarningException
+
 from .models import Patient, Provider, CarePlan
-
-
-class DuplicationError(Exception):
-    def __init__(self, message, status_code=409):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
 
 
 def _parse_dob(dob):
@@ -36,7 +31,10 @@ def check_provider(npi, name):
         return None
     if existing.name == name:
         return existing
-    raise DuplicationError("NPI 已存在但提供者姓名不一致，必须修正", status_code=409)
+    raise BlockError(
+        message="NPI 已存在但提供者姓名不一致，必须修正",
+        code="PROVIDER_NPI_NAME_MISMATCH",
+    )
 
 
 def check_patient(mrn, first_name, last_name, dob, confirm=False):
@@ -59,17 +57,17 @@ def check_patient(mrn, first_name, last_name, dob, confirm=False):
                 existing_by_mrn.dob == dob):
             return existing_by_mrn
         if not confirm:
-            raise DuplicationError(
-                "MRN 已存在但患者姓名或出生日期不一致，请确认后继续",
-                status_code=409
+            raise WarningException(
+                message="MRN 已存在但患者姓名或出生日期不一致，请确认后继续",
+                code="PATIENT_MRN_MISMATCH",
             )
         return existing_by_mrn
 
     if existing_by_name_dob:
         if not confirm:
-            raise DuplicationError(
-                "姓名和出生日期已存在但 MRN 不同，请确认后继续",
-                status_code=409
+            raise WarningException(
+                message="姓名和出生日期已存在但 MRN 不同，请确认后继续",
+                code="PATIENT_NAME_DOB_DUPLICATE",
             )
         return None
 
@@ -88,9 +86,9 @@ def check_order(patient, medication_name, confirm=False):
         created_at__date=today
     ).exists()
     if same_day:
-        raise DuplicationError(
-            "同一患者同日已有相同药物订单，无法重复提交（必须阻止）",
-            status_code=409
+        raise BlockError(
+            message="同一患者同日已有相同药物订单，无法重复提交",
+            code="ORDER_SAME_DAY_DUPLICATE",
         )
 
     diff_day = CarePlan.objects.filter(
@@ -98,7 +96,7 @@ def check_order(patient, medication_name, confirm=False):
         medication_name=medication_name
     ).exclude(created_at__date=today).exists()
     if diff_day and not confirm:
-        raise DuplicationError(
-            "同一患者已有相同药物订单（不同日期），请确认后继续",
-            status_code=409
+        raise WarningException(
+            message="同一患者已有相同药物订单（不同日期），请确认后继续",
+            code="ORDER_DIFF_DAY_DUPLICATE",
         )

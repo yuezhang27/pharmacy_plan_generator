@@ -6,14 +6,11 @@ import csv
 from django.db.models import Q
 from django.http import HttpResponse
 
+from pharmacy_plan.exceptions import BlockError
+
 from .models import Patient, Provider, CarePlan
 from .tasks import generate_careplan_task
-from .duplication_detection import (
-    check_provider,
-    check_patient,
-    check_order,
-    DuplicationError,
-)
+from .duplication_detection import check_provider, check_patient, check_order
 
 
 def create_careplan(data):
@@ -63,78 +60,98 @@ def create_careplan(data):
     generate_careplan_task.delay(careplan.id)
 
     return {
-        'success': True,
-        'message': '已收到',
-        'careplan_id': careplan.id,
-        'status': careplan.status,
+        "success": True,
+        "data": {
+            "message": "已收到",
+            "careplan_id": careplan.id,
+            "status": careplan.status,
+        },
     }
 
 
 def get_careplan_detail(careplan_id):
     """
     获取单个 care plan 详情（仅 completed 有内容）
-    返回 (data_dict, None) 或 (None, error_dict, status_code)
     """
     try:
         careplan = CarePlan.objects.select_related('patient', 'provider').get(id=careplan_id)
     except CarePlan.DoesNotExist:
-        return None, {'error': 'Care plan not found'}, 404
+        raise BlockError(
+            message="Care plan not found",
+            code="NOT_FOUND",
+            http_status=404,
+        )
 
     if careplan.status != 'completed':
-        return None, {
-            'status': careplan.status,
-            'error': careplan.error_message if careplan.status == 'failed' else 'Care plan is not ready yet'
-        }, 400
+        raise BlockError(
+            message=careplan.error_message if careplan.status == 'failed' else "Care plan is not ready yet",
+            code="NOT_READY",
+            detail={"status": careplan.status},
+            http_status=400,
+        )
 
     return {
-        'id': careplan.id,
-        'status': careplan.status,
-        'content': careplan.generated_content,
-        'patient': {
-            'first_name': careplan.patient.first_name,
-            'last_name': careplan.patient.last_name,
-            'mrn': careplan.patient.mrn
+        "success": True,
+        "data": {
+            "id": careplan.id,
+            "status": careplan.status,
+            "content": careplan.generated_content,
+            "patient": {
+                "first_name": careplan.patient.first_name,
+                "last_name": careplan.patient.last_name,
+                "mrn": careplan.patient.mrn,
+            },
+            "medication": careplan.medication_name,
+            "created_at": careplan.created_at.isoformat(),
         },
-        'medication': careplan.medication_name,
-        'created_at': careplan.created_at.isoformat()
-    }, None, None
+    }
 
 
 def get_careplan_status(careplan_id):
     """
     获取 care plan 状态（供轮询）
-    返回 (data_dict, None) 或 (None, error_dict, status_code)
     """
     try:
         careplan = CarePlan.objects.get(id=careplan_id)
     except CarePlan.DoesNotExist:
-        return None, {'error': 'Care plan not found'}, 404
+        raise BlockError(
+            message="Care plan not found",
+            code="NOT_FOUND",
+            http_status=404,
+        )
 
-    data = {'status': careplan.status}
-    if careplan.status == 'completed':
-        data['content'] = careplan.generated_content
-    elif careplan.status == 'failed':
-        data['error'] = careplan.error_message or 'Generation failed'
+    data = {"success": True, "data": {"status": careplan.status}}
+    if careplan.status == "completed":
+        data["data"]["content"] = careplan.generated_content
+    elif careplan.status == "failed":
+        data["data"]["error"] = careplan.error_message or "Generation failed"
 
-    return data, None, None
+    return data
 
 
 def get_careplan_download(careplan_id):
     """
     获取 care plan 下载内容
-    返回 (content, filename, None) 或 (None, None, error_tuple)
-    error_tuple: (message, status_code)
+    返回 (content, filename)
     """
     try:
-        careplan = CarePlan.objects.select_related('patient').get(id=careplan_id)
+        careplan = CarePlan.objects.select_related("patient").get(id=careplan_id)
     except CarePlan.DoesNotExist:
-        return None, None, ("Care plan not found", 404)
+        raise BlockError(
+            message="Care plan not found",
+            code="NOT_FOUND",
+            http_status=404,
+        )
 
-    if careplan.status != 'completed' or not careplan.generated_content:
-        return None, None, ("Care plan is not completed yet", 400)
+    if careplan.status != "completed" or not careplan.generated_content:
+        raise BlockError(
+            message="Care plan is not completed yet",
+            code="NOT_READY",
+            http_status=400,
+        )
 
     filename = f"careplan_{careplan.patient.mrn}_{careplan.medication_name}.txt"
-    return careplan.generated_content, filename, None
+    return careplan.generated_content, filename
 
 
 def search_careplans(q, export=False):
@@ -181,14 +198,14 @@ def search_careplans(q, export=False):
     items = []
     for cp in queryset[:50]:
         items.append({
-            'id': cp.id,
-            'patient_name': f"{cp.patient.first_name} {cp.patient.last_name}",
-            'patient_mrn': cp.patient.mrn,
-            'provider_name': cp.provider.name,
-            'provider_npi': cp.provider.npi,
-            'medication_name': cp.medication_name,
-            'primary_diagnosis': cp.primary_diagnosis,
-            'created_at': cp.created_at.isoformat(),
-            'download_url': f'/download-careplan/{cp.id}/',
+            "id": cp.id,
+            "patient_name": f"{cp.patient.first_name} {cp.patient.last_name}",
+            "patient_mrn": cp.patient.mrn,
+            "provider_name": cp.provider.name,
+            "provider_npi": cp.provider.npi,
+            "medication_name": cp.medication_name,
+            "primary_diagnosis": cp.primary_diagnosis,
+            "created_at": cp.created_at.isoformat(),
+            "download_url": f"/download-careplan/{cp.id}/",
         })
-    return {'results': items}
+    return {"success": True, "data": {"results": items}}

@@ -280,12 +280,21 @@
                     const res = await fetch('/api/careplan/' + careplanId + '/status/');
                     const data = await res.json();
 
-                    if (data.status === 'completed') {
+                    if (!data.success) {
+                        stopPolling();
+                        loading.style.display = 'none';
+                        error.textContent = (data.message || 'Error');
+                        error.style.display = 'block';
+                        return;
+                    }
+
+                    const d = data.data || {};
+                    if (d.status === 'completed') {
                         stopPolling();
                         loading.style.display = 'none';
                         resultTitle.textContent = 'Generated Care Plan';
                         submitMessage.textContent = 'Care plan 已生成完成';
-                        careplanContent.textContent = data.content || '';
+                        careplanContent.textContent = d.content || '';
                         careplanContent.style.display = 'block';
                         downloadLink.href = '/download-careplan/' + careplanId + '/';
                         careplanActions.style.display = 'block';
@@ -293,15 +302,15 @@
                         return;
                     }
 
-                    if (data.status === 'failed') {
+                    if (d.status === 'failed') {
                         stopPolling();
                         loading.style.display = 'none';
-                        error.textContent = '生成失败: ' + (data.error || 'Unknown error');
+                        error.textContent = '生成失败: ' + (d.error || 'Unknown error');
                         error.style.display = 'block';
                         return;
                     }
 
-                    loadingText.textContent = '生成中... (status: ' + data.status + ')';
+                    loadingText.textContent = '生成中... (status: ' + (d.status || '') + ')';
                 } catch (err) {
                     stopPolling();
                     loading.style.display = 'none';
@@ -360,27 +369,32 @@
                     body: JSON.stringify(formData)
                 });
                 const data = await response.json();
+
                 if (data.success) {
+                    const d = data.data || {};
                     loadingText.textContent = '已收到，等待生成...';
-                    pollCareplanStatus(data.careplan_id);
-                } else {
-                    throw new Error(data.error || 'Failed to submit');
+                    pollCareplanStatus(d.careplan_id);
+                    return;
                 }
+
+                const err = { type: data.type, code: data.code, message: data.message || 'Failed' };
+                throw err;
             }
-            
+
             try {
                 await doSubmit(false);
             } catch (err) {
-                if (err.message.includes('请确认后继续') && confirm(err.message + '\n\n点击确定以确认继续提交。')) {
+                const msg = err.message || (typeof err === 'string' ? err : 'Unknown error');
+                if (err.type === 'warning' && confirm(msg + '\n\n点击确定以确认继续提交。')) {
                     try {
                         await doSubmit(true);
                     } catch (e) {
-                        error.textContent = 'Error: ' + e.message;
+                        error.textContent = (e.message || e) + '';
                         error.style.display = 'block';
                         loading.style.display = 'none';
                     }
                 } else {
-                    error.textContent = 'Error: ' + err.message;
+                    error.textContent = msg;
                     error.style.display = 'block';
                     loading.style.display = 'none';
                 }
@@ -409,7 +423,7 @@
                 });
 
                 const data = await response.json();
-                const items = data.results || [];
+                const items = (data.data && data.data.results) || data.results || [];
 
                 if (items.length === 0) {
                     resultsBody.innerHTML = '<tr><td colspan="8">No care plans found.</td></tr>';
