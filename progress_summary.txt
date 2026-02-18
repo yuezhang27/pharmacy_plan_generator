@@ -1,7 +1,7 @@
 ================================================================================
 Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 ================================================================================
-更新日期: 2026-02-16
+更新日期: 2026-02-12
 用途: 复盘学习过程、项目开发与系统设计决策
 ================================================================================
 
@@ -128,6 +128,24 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 问题: 拆分后如何验证 API 行为一致？
 - 结论: docker-compose up -d 后 E2E 跑一遍主流程即可，不必逐个 router 单独测
 
+【第 22 步】统一错误处理系统
+- 要求: BaseAppException 基类；ValidationError/BlockError/WarningException 子类；统一 exception_handler；兼容 DRF ValidationError
+- 决策:
+  - BaseAppException: type, code, message, detail, http_status
+  - ValidationError(400): serializer 校验失败
+  - BlockError(409): 业务阻止（NPI 姓名不一致、同日重复订单等）
+  - WarningException(200): 业务警告（MRN/姓名+DOB 重复，用户 confirm 可继续）
+  - AppExceptionMiddleware 捕获异常，交由 app_exception_handler 转 JSON
+  - 前端统一用 success/type/code 判断，无需多处 if-else
+
+【第 23 步】单元测试、集成测试与 Docker 测试
+- 要求: Patient 重复检测 90% 覆盖率；集成测试；错误输入对应错误响应；用 Docker 跑测试
+- 决策:
+  - 新增 pytest, pytest-django, pytest-cov
+  - careplan/tests/: test_duplication_patient, test_duplication_provider_order, test_errors, test_integration
+  - docker-compose 新增 test 服务：pytest careplan/tests/ --cov
+  - 测试策略: 见下方 3.10
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -165,9 +183,12 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - GET  /api/search-careplans/?q=xxx 搜索（JSON）
 - GET  /api/search-careplans/?q=xxx&export=1  导出 CSV
 
-3.6 校验与错误处理（当前阶段）
-- 不做: 字段校验、边界检查、duplication detection、warning/error 框架
-- 仅做: 必要的异常捕获，返回简单错误信息
+3.6 校验与错误处理（已实现）
+- BaseAppException 统一格式: success, type, code, message, detail
+- ValidationError(400): 输入格式错误（如 JSON 解析失败）
+- BlockError(409): 业务阻止（NPI 姓名不一致、同日重复订单、CarePlan 不存在等）
+- WarningException(200): 业务警告（MRN/姓名+DOB 重复，confirm 可继续）
+- Duplication detection: Provider(NPI+名字)、Patient(MRN/姓名+DOB)、Order(同日/异日)
 
 3.7 环境变量
 - OPENAI_API_KEY: 优先系统环境变量，其次 .env
@@ -184,6 +205,16 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 导入方式: 在 TablePlus 中手动执行 scripts/load_mock_data.sql
 - 数据: 5 Patient, 3 Provider, 5 CarePlan（均为 completed）
 
+3.10 测试策略
+- 框架: pytest + pytest-django + pytest-cov
+- 测试用 SQLite 而不使用 PostgreSQL: 本地运行 pytest 时设置 USE_SQLITE_FOR_TESTS=1，settings 会切换为 sqlite3 :memory:，无需启动 Docker/PostgreSQL
+- Docker 跑测试: docker-compose run --rm test，使用 PostgreSQL（与生产一致）
+- 测试分类:
+  - Unit: test_duplication_patient（Patient 重复检测，目标 90% 覆盖率）、test_duplication_provider_order（Provider/Order）
+  - Integration: test_integration（完整 API 流程：create、status、search）
+  - Error: test_errors（错误输入 → 对应错误响应：invalid JSON、METHOD_NOT_ALLOWED、PROVIDER_NPI_NAME_MISMATCH、PATIENT_MRN_MISMATCH、ORDER_SAME_DAY_DUPLICATE、NOT_FOUND 等）
+- Celery 任务: 测试中 mock generate_careplan_task.delay，不实际执行 Celery
+
 四、当前项目结构
 --------------------------------------------------------------------------------
 pharmacy_plan_generator/
@@ -192,30 +223,42 @@ pharmacy_plan_generator/
 │   ├── views.py             # 只负责请求/响应
 │   ├── serializers.py       # 数据校验和格式转换（parse_generate_careplan_request）
 │   ├── services.py          # 业务逻辑（create_careplan, get_careplan_detail 等）
+│   ├── duplication_detection.py  # check_provider, check_patient, check_order
 │   ├── tasks.py             # Celery 任务 generate_careplan_task
 │   ├── llm_service.py       # generate_careplan（统一入口）、generate_careplan_mock、
 │   │                        # generate_careplan_with_llm（真实 OpenAI）
 │   ├── templates/           # index.html（表单 + 搜索 + 下载）
+│   ├── tests/               # pytest 测试
+│   │   ├── test_duplication_patient.py    # Patient 重复检测（90% 覆盖率目标）
+│   │   ├── test_duplication_provider_order.py
+│   │   ├── test_errors.py   # 错误输入 → 对应错误响应
+│   │   └── test_integration.py
 │   ├── management/commands/ # run_careplan_worker（手写版，已被 Celery 替代）
 │   └── migrations/
 ├── pharmacy_plan/            # 项目配置
+│   ├── exceptions.py        # BaseAppException, ValidationError, BlockError, WarningException
+│   ├── exception_handler.py # app_exception_handler
+│   ├── middleware.py        # AppExceptionMiddleware
 │   ├── celery.py            # Celery app 配置
 │   └── __init__.py          # 导入 celery_app
 ├── scripts/
 │   ├── load_mock_data.sql   # Mock 数据（PostgreSQL）
 │   └── README.md
-├── docker-compose.yml       # db + redis + web + celery_worker
+├── conftest.py              # pytest fixtures
+├── pytest.ini               # pytest 配置
+├── .coveragerc              # coverage 配置
+├── docker-compose.yml       # db + redis + web + celery_worker + test
 ├── Dockerfile
-├── requirements.txt         # 含 celery, redis
+├── requirements.txt         # 含 celery, redis, pytest, pytest-django, pytest-cov
 ├── design.md                # 原始设计文档
 ├── REFACTOR_MIGRATION_TABLE.md  # views 拆分迁移表
 └── progress_summary.txt     # 本文件
 
 五、design.md 中尚未实现的部分（后续可迭代）
 --------------------------------------------------------------------------------
-- 输入校验（MRN 6 位、NPI 10 位、ICD-10 等）
-- Duplication detection（patient/order/provider）
-- Error vs Warning 行为区分
+- 输入校验（MRN 6 位、NPI 10 位、ICD-10 等）— serializer 尚未强制格式
+- Duplication detection（patient/order/provider）— 已实现
+- Error vs Warning 行为区分 — 已实现（BlockError/WarningException）
 - PDF 解析（Patient Records）
 - duplication_warning 在报表中的实际逻辑
 
@@ -225,6 +268,7 @@ pharmacy_plan_generator/
 
 七、今日问答与发现
 --------------------------------------------------------------------------------
+- 测试策略：本地开发用 USE_SQLITE_FOR_TESTS=1 跑 pytest，无需 PostgreSQL；Docker 跑测试用 PostgreSQL 与生产一致
 - 不需要整页刷新也能看到新完成的 care plan：点「Search Care Plans」会发起新请求查 DB，即可看到结果
 - 「不自动更新」的含义：页面上无轮询、无推送；任何触发新 HTTP 请求的操作都能拿到最新数据
 - Polling 实现后：前端提交后每 3 秒轮询 status API，completed/failed 时自动停止并展示
