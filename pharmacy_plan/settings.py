@@ -88,3 +88,10 @@ REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 # Celery
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
+
+# Tests: use SQLite when running locally without Docker (set USE_SQLITE_FOR_TESTS=1)
+if os.getenv("USE_SQLITE_FOR_TESTS") == "1":
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+    }

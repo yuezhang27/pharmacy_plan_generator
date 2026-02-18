@@ -114,6 +114,27 @@ pharmacy_plan_generator/
 - 需要有效的 OpenAI API key 才能生成 care plan
 - 数据库数据会持久化在 Docker volume 中
 
+## 运行测试
+
+使用 Docker 运行单元测试和集成测试：
+
+```bash
+# 确保 Docker Desktop 已启动，然后运行
+docker-compose run --rm test
+```
+
+测试包括：
+- **Patient 重复检测**：`careplan/tests/test_duplication_patient.py`（目标 90% 覆盖率）
+- **Provider/Order 重复检测**：`careplan/tests/test_duplication_provider_order.py`
+- **错误处理**：`careplan/tests/test_errors.py`（验证错误输入产生对应错误响应）
+- **集成测试**：`careplan/tests/test_integration.py`（完整 API 流程）
+
+本地运行（需 PostgreSQL 或设置 `USE_SQLITE_FOR_TESTS=1`）：
+
+```bash
+USE_SQLITE_FOR_TESTS=1 pytest careplan/tests/
+```
+
 ## 停止服务
 
 ```bash

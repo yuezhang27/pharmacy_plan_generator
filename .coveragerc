@@ -1,0 +1,9 @@
+[run]
+source = careplan,pharmacy_plan
+omit = */migrations/*,*/tests/*,*/__pycache__/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
