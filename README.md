@@ -91,6 +91,11 @@ docker-compose exec web python manage.py createsuperuser
      - care plan 生成时间戳
      - duplication warning 占位列（目前未实现实际逻辑）
 
+## Patient 重复检测原则
+
+- **MRN 已存在，但输入的姓名或 DOB 与现有记录不一致**：即使用户选择「继续」，系统仍以**原有 MRN 关联的既有人口学信息**为准（MRN 是患者唯一标识符）。
+- **输入的姓名或 DOB 与现有某人记录一致，但 MRN 不同**：用户选择「继续」时，系统以**新 MRN 关联的新人口学信息**为准，创建一条姓名和 DOB 相同、MRN 不同的新记录（可能是同名同生日不同人）。
+
 ## 项目结构
 
 ```
