@@ -146,6 +146,12 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   - docker-compose 新增 test 服务：pytest careplan/tests/ --cov
   - 测试策略: 见下方 3.10
 
+【第 24 步】README 补充 Patient 重复检测原则
+- 要求: 明确 MRN 已存在 / 姓名+DOB 已存在时，用户选择「继续」后的系统行为
+- 决策（写入 README）:
+  - MRN 已存在，但输入的姓名或 DOB 与现有记录不一致：即使用户选择「继续」，系统仍以**原有 MRN 关联的既有人口学信息**为准（MRN 是患者唯一标识符）
+  - 姓名+DOB 与现有某人一致，但 MRN 不同：用户选择「继续」时，系统以**新 MRN 关联的新人口学信息**为准，创建新记录（可能是同名同生日不同人）
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -215,6 +221,16 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   - Error: test_errors（错误输入 → 对应错误响应：invalid JSON、METHOD_NOT_ALLOWED、PROVIDER_NPI_NAME_MISMATCH、PATIENT_MRN_MISMATCH、ORDER_SAME_DAY_DUPLICATE、NOT_FOUND 等）
 - Celery 任务: 测试中 mock generate_careplan_task.delay，不实际执行 Celery
 
+3.11 Patient 重复检测原则（业务规则）
+- MRN 已存在 + 姓名/DOB 不一致 + 用户继续 → 以**原有 MRN 的既有人口学信息**为准（MRN 为唯一标识）
+- 姓名+DOB 已存在 + MRN 不同 + 用户继续 → 以**新 MRN 的新人口学信息**为准，创建新记录（同名同生日不同人）
+
+3.12 Middleware 与 Exception Handler 的关系
+- Django 机制：view 抛异常时，只有 middleware 的 process_exception 会被调用；没有「全局异常处理器」配置
+- 若不在每个 view 显式 try/except 调用 handler，就必须用 middleware 统一拦截
+- Middleware 放 settings 最后 → process_exception 时**最先**被调用（反向顺序）
+- Handler 是业务逻辑函数，Middleware 是 Django 钩子；分离便于测试和复用
+
 四、当前项目结构
 --------------------------------------------------------------------------------
 pharmacy_plan_generator/
@@ -268,6 +284,9 @@ pharmacy_plan_generator/
 
 七、今日问答与发现
 --------------------------------------------------------------------------------
+- **AppExceptionMiddleware 疑惑**：为何需要 middleware？因为 Django 没有 view 异常的全局钩子，只有 middleware 的 process_exception 能拦截；handler 只是我们拆出的逻辑函数，不删 middleware 则 handler 永远不会被调用
+- **Middleware 与 Handler**：不是单纯的 wrapper，而是配套使用；显式在每个 view 调用 handler 违反 DRY，故用 middleware 统一处理
+- **E2E 发现 format validation 未实现**：unit test 通过但 E2E 可随意输入错误格式仍能生成 care plan；原因：serializer 只校验 JSON 解析，未校验 NPI 10 位、MRN 6 位等；progress_summary 已注明「serializer 尚未强制格式」
 - 测试策略：本地开发用 USE_SQLITE_FOR_TESTS=1 跑 pytest，无需 PostgreSQL；Docker 跑测试用 PostgreSQL 与生产一致
 - 不需要整页刷新也能看到新完成的 care plan：点「Search Care Plans」会发起新请求查 DB，即可看到结果
 - 「不自动更新」的含义：页面上无轮询、无推送；任何触发新 HTTP 请求的操作都能拿到最新数据
