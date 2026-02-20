@@ -35,6 +35,7 @@ POSTGRES_PORT=5432
 ```
 
 **注意**：
+
 - 代码会优先从系统环境变量读取 `OPENAI_API_KEY`
 - 如果系统环境变量已配置，则无需 `.env` 文件
 - 使用 Docker 时，如果系统环境变量已配置，docker-compose.yml 会自动传递（通过 `${OPENAI_API_KEY}`）
@@ -124,6 +125,7 @@ docker-compose run --rm test
 ```
 
 测试包括：
+
 - **Patient 重复检测**：`careplan/tests/test_duplication_patient.py`（目标 90% 覆盖率）
 - **Provider/Order 重复检测**：`careplan/tests/test_duplication_provider_order.py`
 - **错误处理**：`careplan/tests/test_errors.py`（验证错误输入产生对应错误响应）
@@ -148,13 +150,25 @@ docker-compose down -v
 ```
 
 ---
+
 ## Mock ENV
-### 方式 1：不设置，默认 mock
+
+### Mock方式 1：不设置，默认 mock
+
 `docker-compose up -d`
-### 方式 2：显式设置`USE_MOCK_LLM=1 docker-compose up -d`
+
+### Mock方式 2：显式设置
+
+`set USE_MOCK_LLM=1 && docker compose up -d`
 
 Prod 模式（真实调用 LLM）
 
-### 方式 1：启动时设置
+### REAL PROD方式 1：启动时设置
 
-`USE_MOCK_LLM=0 docker-compose up -d`
+`set USE_MOCK_LLM=1 && docker compose up -d`
+
+## 测试
+
+- 启动 Docker Desktop 后执行
+
+`docker-compose run --rm test`
