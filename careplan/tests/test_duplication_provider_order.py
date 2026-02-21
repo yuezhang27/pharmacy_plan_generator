@@ -45,7 +45,7 @@ class TestCheckOrder:
         CarePlan.objects.create(
             patient=patient,
             provider=provider,
-            primary_diagnosis="D1",
+            primary_diagnosis="E11.9",
             medication_name="Metformin",
             patient_records="r",
             status="completed",
@@ -67,7 +67,7 @@ class TestCheckOrder:
             CarePlan.objects.create(
                 patient=patient,
                 provider=provider,
-                primary_diagnosis="D1",
+                primary_diagnosis="E11.9",
                 medication_name="Metformin",
                 patient_records="r",
                 status="completed",
@@ -91,7 +91,7 @@ class TestCheckOrder:
             CarePlan.objects.create(
                 patient=patient,
                 provider=provider,
-                primary_diagnosis="D1",
+                primary_diagnosis="E11.9",
                 medication_name="Metformin",
                 patient_records="r",
                 status="completed",

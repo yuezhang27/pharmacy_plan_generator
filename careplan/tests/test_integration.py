@@ -22,7 +22,7 @@ class TestGenerateCareplanIntegration:
             "patient_first_name": "John",
             "patient_last_name": "Doe",
             "patient_dob": "1990-01-15",
-            "primary_diagnosis": "Diabetes",
+            "primary_diagnosis": "E11.9",
             "medication_name": "Metformin",
             "patient_records": "Patient stable.",
         }
@@ -59,7 +59,7 @@ class TestGenerateCareplanIntegration:
             "patient_first_name": "John",
             "patient_last_name": "Doe",
             "patient_dob": "1990-01-15",
-            "primary_diagnosis": "D1",
+            "primary_diagnosis": "E11.9",
             "medication_name": "Metformin",
             "patient_records": "r",
             "confirm": True,
@@ -92,7 +92,7 @@ class TestCareplanStatusIntegration:
         cp = CarePlan.objects.create(
             patient=patient,
             provider=provider,
-            primary_diagnosis="D1",
+            primary_diagnosis="E11.9",
             medication_name="Metformin",
             patient_records="r",
             status="pending",
@@ -115,7 +115,7 @@ class TestCareplanStatusIntegration:
         cp = CarePlan.objects.create(
             patient=patient,
             provider=provider,
-            primary_diagnosis="D1",
+            primary_diagnosis="E11.9",
             medication_name="Metformin",
             patient_records="r",
             status="completed",
@@ -153,7 +153,7 @@ class TestSearchCareplansIntegration:
         CarePlan.objects.create(
             patient=patient,
             provider=provider,
-            primary_diagnosis="Diabetes",
+            primary_diagnosis="E11.9",
             medication_name="Metformin",
             patient_records="r",
             status="completed",

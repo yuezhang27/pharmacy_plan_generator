@@ -47,7 +47,7 @@ class TestGenerateCareplanErrors:
             "patient_first_name": "John",
             "patient_last_name": "Doe",
             "patient_dob": "1990-01-15",
-            "primary_diagnosis": "D1",
+            "primary_diagnosis": "E11.9",
             "medication_name": "Metformin",
             "patient_records": "r",
         }
@@ -81,7 +81,7 @@ class TestGenerateCareplanErrors:
             "patient_first_name": "John",
             "patient_last_name": "Doe",
             "patient_dob": "1990-01-15",
-            "primary_diagnosis": "D1",
+            "primary_diagnosis": "E11.9",
             "medication_name": "Metformin",
             "patient_records": "r",
         }
@@ -124,7 +124,7 @@ class TestGenerateCareplanErrors:
         CarePlan.objects.create(
             patient=patient,
             provider=provider,
-            primary_diagnosis="D1",
+            primary_diagnosis="E11.9",
             medication_name="Metformin",
             patient_records="r",
             status="completed",
@@ -137,7 +137,7 @@ class TestGenerateCareplanErrors:
             "patient_first_name": "John",
             "patient_last_name": "Doe",
             "patient_dob": "1990-01-15",
-            "primary_diagnosis": "D1",
+            "primary_diagnosis": "E11.9",
             "medication_name": "Metformin",
             "patient_records": "r",
         }

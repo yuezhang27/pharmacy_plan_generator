@@ -152,6 +152,14 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   - MRN 已存在，但输入的姓名或 DOB 与现有记录不一致：即使用户选择「继续」，系统仍以**原有 MRN 关联的既有人口学信息**为准（MRN 是患者唯一标识符）
   - 姓名+DOB 与现有某人一致，但 MRN 不同：用户选择「继续」时，系统以**新 MRN 关联的新人口学信息**为准，创建新记录（可能是同名同生日不同人）
 
+【第 25 步】数据格式校验
+- 要求: NPI 10 位、MRN 6 位、ICD-10 格式、必填字段
+- 决策:
+  - serializers.validate_generate_careplan_data：校验必填、NPI、MRN、DOB(YYYY-MM-DD)、ICD-10
+  - parse_generate_careplan_request 在 json.loads 成功后调用 validate_generate_careplan_data
+  - 失败时 ValidationError，detail.errors 包含所有错误列表
+  - 新增 test_serializers_validation.py
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -191,7 +199,8 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 
 3.6 校验与错误处理（已实现）
 - BaseAppException 统一格式: success, type, code, message, detail
-- ValidationError(400): 输入格式错误（如 JSON 解析失败）
+- ValidationError(400): 输入格式错误（JSON 解析失败、格式校验失败）
+- 格式校验（serializers）: NPI 10 位数字、MRN 6 位数字、DOB YYYY-MM-DD、ICD-10（如 A00, E11.9）、必填字段非空
 - BlockError(409): 业务阻止（NPI 姓名不一致、同日重复订单、CarePlan 不存在等）
 - WarningException(200): 业务警告（MRN/姓名+DOB 重复，confirm 可继续）
 - Duplication detection: Provider(NPI+名字)、Patient(MRN/姓名+DOB)、Order(同日/异日)
@@ -248,7 +257,8 @@ pharmacy_plan_generator/
 │   │   ├── test_duplication_patient.py    # Patient 重复检测（90% 覆盖率目标）
 │   │   ├── test_duplication_provider_order.py
 │   │   ├── test_errors.py   # 错误输入 → 对应错误响应
-│   │   └── test_integration.py
+│   │   ├── test_integration.py
+│   │   └── test_serializers_validation.py # 格式校验
 │   ├── management/commands/ # run_careplan_worker（手写版，已被 Celery 替代）
 │   └── migrations/
 ├── pharmacy_plan/            # 项目配置
@@ -272,7 +282,7 @@ pharmacy_plan_generator/
 
 五、design.md 中尚未实现的部分（后续可迭代）
 --------------------------------------------------------------------------------
-- 输入校验（MRN 6 位、NPI 10 位、ICD-10 等）— serializer 尚未强制格式
+- 输入校验（MRN 6 位、NPI 10 位、ICD-10 等）— 已实现（serializers.validate_generate_careplan_data）
 - Duplication detection（patient/order/provider）— 已实现
 - Error vs Warning 行为区分 — 已实现（BlockError/WarningException）
 - PDF 解析（Patient Records）
