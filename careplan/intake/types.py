@@ -42,9 +42,12 @@ class InternalOrder:
     careplan: CarePlanInfo
     source: str  # 数据来源标识，如 "webform", "pharmacorp_portal"
     raw_data: Any = field(default=None, repr=False)  # 保留原始数据用于排查
+    request_flags: dict = field(default_factory=dict)  # 如 confirm，由各 Adapter 填充
 
-    def to_create_careplan_dict(self, confirm: bool = False) -> dict:
+    def to_create_careplan_dict(self, confirm: bool | None = None) -> dict:
         """转换为 create_careplan 所需的 dict 格式"""
+        if confirm is None:
+            confirm = self.request_flags.get("confirm", False)
         return {
             "patient_mrn": self.patient.mrn,
             "patient_first_name": self.patient.first_name,

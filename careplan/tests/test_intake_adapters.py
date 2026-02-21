@@ -133,3 +133,53 @@ class TestGetAdapter:
         with pytest.raises(ValueError) as exc_info:
             get_adapter("unknown_hospital")
         assert "Unknown intake source" in str(exc_info.value)
+
+
+@pytest.mark.django_db
+class TestIntakeAPIIntegration:
+    """API 层：Adapter 已被 views 使用"""
+
+    def test_generate_careplan_uses_webform_adapter(self):
+        """POST /api/generate-careplan/ 使用 WebFormAdapter"""
+        from django.test import Client
+        from unittest.mock import patch
+
+        client = Client()
+        payload = {
+            "patient_mrn": "123456",
+            "patient_first_name": "John",
+            "patient_last_name": "Doe",
+            "patient_dob": "1990-01-15",
+            "provider_npi": "1234567890",
+            "provider_name": "Dr. Jane",
+            "primary_diagnosis": "E11.9",
+            "medication_name": "Metformin",
+            "patient_records": "Stable.",
+        }
+        with patch("careplan.services.generate_careplan_task") as m:
+            m.delay = lambda x: None
+            resp = client.post(
+                "/api/generate-careplan/",
+                data=json.dumps(payload),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+
+    def test_intake_pharmacorp_accepts_xml(self):
+        """POST /api/intake/pharmacorp/ 接受 XML"""
+        from django.test import Client
+        from unittest.mock import patch
+
+        client = Client()
+        with patch("careplan.services.generate_careplan_task") as m:
+            m.delay = lambda x: None
+            resp = client.post(
+                "/api/intake/pharmacorp/",
+                data=PARTNER_C_XML,
+                content_type="application/xml",
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True

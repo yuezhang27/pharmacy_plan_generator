@@ -2,6 +2,8 @@
 多数据源 Adapter：解析、转换、校验
 """
 import json
+import re
+from datetime import datetime
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from typing import Any
@@ -9,6 +11,11 @@ from typing import Any
 from pharmacy_plan.exceptions import ValidationError
 
 from .types import InternalOrder, PatientInfo, ProviderInfo, CarePlanInfo
+
+# 与 serializers 一致的格式校验
+_NPI_PATTERN = re.compile(r"^\d{10}$")
+_MRN_PATTERN = re.compile(r"^\d{6}$")
+_ICD10_PATTERN = re.compile(r"^[A-Za-z][0-9]{2}(\.[0-9A-Za-z]{1,4})?$")
 
 
 class BaseIntakeAdapter(ABC):
@@ -49,22 +56,35 @@ class BaseIntakeAdapter(ABC):
     def validate(self, order: InternalOrder) -> None:
         """
         验证转换后的 InternalOrder
-        默认做基本校验，子类可覆盖增强
+        与 serializers 格式校验一致：NPI 10 位、MRN 6 位、DOB、ICD-10
         """
         errors = []
-        if not order.patient.mrn or len(order.patient.mrn) != 6 or not order.patient.mrn.isdigit():
+        if not order.patient.mrn or not _MRN_PATTERN.match(order.patient.mrn.strip()):
             errors.append({"field": "patient.mrn", "message": "MRN 必须为 6 位数字"})
-        if not order.provider.npi or len(order.provider.npi) != 10 or not order.provider.npi.isdigit():
+        if not order.provider.npi or not _NPI_PATTERN.match(order.provider.npi.strip()):
             errors.append({"field": "provider.npi", "message": "NPI 必须为 10 位数字"})
+        if not order.patient.dob:
+            errors.append({"field": "patient.dob", "message": "出生日期格式应为 YYYY-MM-DD"})
+        else:
+            s = order.patient.dob.strip()[:10]
+            if len(s) != 10 or s[4] != "-" or s[7] != "-":
+                errors.append({"field": "patient.dob", "message": "出生日期格式应为 YYYY-MM-DD"})
+            else:
+                try:
+                    datetime.strptime(s, "%Y-%m-%d").date()
+                except ValueError:
+                    errors.append({"field": "patient.dob", "message": "出生日期必须是合法日期"})
         if not order.careplan.primary_diagnosis:
             errors.append({"field": "careplan.primary_diagnosis", "message": "主要诊断不能为空"})
+        elif not _ICD10_PATTERN.match(order.careplan.primary_diagnosis.strip()):
+            errors.append({"field": "careplan.primary_diagnosis", "message": "主要诊断需符合 ICD-10 格式（如 A00, E11.9）"})
         if not order.careplan.medication_name:
             errors.append({"field": "careplan.medication_name", "message": "药物名称不能为空"})
         if not order.careplan.patient_records:
             errors.append({"field": "careplan.patient_records", "message": "患者记录不能为空"})
         if errors:
             raise ValidationError(
-                message="数据校验失败",
+                message="数据格式校验失败",
                 code="VALIDATION_ERROR",
                 detail={"errors": errors},
             )
@@ -110,6 +130,7 @@ class WebFormAdapter(BaseIntakeAdapter):
                 patient_records=str(parsed.get("patient_records", "")).strip(),
             ),
             source=self.source_id,
+            request_flags={"confirm": parsed.get("confirm") is True},
         )
 
 
