@@ -122,20 +122,20 @@ def validate_generate_careplan_data(data):
         )
 
 
-def parse_generate_careplan_request(body):
-    """
-    解析 POST body (JSON) -> dict
-    JSON 格式错误时抛出 ValidationError
-    解析成功后调用格式校验，校验失败时抛出 ValidationError
-    """
-    try:
-        data = json.loads(body)
-    except json.JSONDecodeError as e:
-        raise ValidationError(
-            message="Invalid JSON format",
-            code="INVALID_JSON",
-            detail={"error": str(e)},
-        )
+# def parse_generate_careplan_request(body):
+#     """
+#     解析 POST body (JSON) -> dict
+#     JSON 格式错误时抛出 ValidationError
+#     解析成功后调用格式校验，校验失败时抛出 ValidationError
+#     """
+#     try:
+#         data = json.loads(body)
+#     except json.JSONDecodeError as e:
+#         raise ValidationError(
+#             message="Invalid JSON format",
+#             code="INVALID_JSON",
+#             detail={"error": str(e)},
+#         )
 
-    validate_generate_careplan_data(data)
-    return data
+#     validate_generate_careplan_data(data)
+#     return data

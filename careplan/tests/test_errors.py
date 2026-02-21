@@ -153,16 +153,16 @@ class TestGenerateCareplanErrors:
         assert data["code"] == "ORDER_SAME_DAY_DUPLICATE"
 
 
-@pytest.mark.django_db
-class TestSerializersErrors:
-    """Serializer/parse errors."""
+# @pytest.mark.django_db
+# class TestSerializersErrors:
+#     """Serializer/parse errors."""
 
-    def test_parse_invalid_json_raises_validation_error(self):
-        from careplan.serializers import parse_generate_careplan_request
+#     def test_parse_invalid_json_raises_validation_error(self):
+#         from careplan.serializers import parse_generate_careplan_request
 
-        with pytest.raises(ValidationError) as exc_info:
-            parse_generate_careplan_request(b"invalid")
-        assert exc_info.value.code == "INVALID_JSON"
+#         with pytest.raises(ValidationError) as exc_info:
+#             parse_generate_careplan_request(b"invalid")
+#         assert exc_info.value.code == "INVALID_JSON"
 
 
 @pytest.mark.django_db
