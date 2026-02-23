@@ -133,6 +133,91 @@ class WebFormAdapter(BaseIntakeAdapter):
             request_flags={"confirm": parsed.get("confirm") is True},
         )
 
+class MedCenterJsonAdapter(BaseIntakeAdapter):
+    """
+    MedCenter 开放 API JSON 格式
+    字段：pt (mrn, fname, lname, dob), provider (name, npi_num), dx (primary, secondary),
+    rx (med_name), med_hx, clinical_notes
+    """
+
+    source_id = "medcenter"
+
+    def _dob_mmddyyyy_to_iso(self, s: str) -> str:
+        """将 MM/DD/YYYY 转为 YYYY-MM-DD"""
+        if not s or not isinstance(s, str):
+            return ""
+        s = s.strip()
+        try:
+            dt = datetime.strptime(s[:10], "%m/%d/%Y")
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            return s[:10]  # 原样返回前 10 字符，由 validate 报错
+
+    def parse(self, raw: bytes | str) -> dict:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValidationError(
+                message="Invalid JSON format",
+                code="INVALID_JSON",
+                detail={"error": str(e)},
+            )
+
+    def transform(self, parsed: dict) -> InternalOrder:
+        pt = parsed.get("pt") or {}
+        provider = parsed.get("provider") or {}
+        dx = parsed.get("dx") or {}
+        rx = parsed.get("rx") or {}
+
+        mrn = str(pt.get("mrn", "")).strip()
+        fname = str(pt.get("fname", "")).strip()
+        lname = str(pt.get("lname", "")).strip()
+        dob_raw = str(pt.get("dob", ""))
+        dob = self._dob_mmddyyyy_to_iso(dob_raw)
+
+        npi = str(provider.get("npi_num", "")).strip()
+        provider_name = str(provider.get("name", "")).strip()
+
+        primary = str(dx.get("primary", "")).strip()
+        secondary_raw = dx.get("secondary")
+        if isinstance(secondary_raw, list):
+            additional = ", ".join(str(x).strip() for x in secondary_raw if x)
+        else:
+            additional = str(secondary_raw or "").strip()
+
+        med_name = str(rx.get("med_name", "")).strip()
+
+        med_hx_raw = parsed.get("med_hx") or []
+        if isinstance(med_hx_raw, list):
+            medication_history = "; ".join(str(x) for x in med_hx_raw if x)
+        else:
+            medication_history = str(med_hx_raw or "")
+
+        clinical_notes = str(parsed.get("clinical_notes", "")).strip()
+        allergies_raw = parsed.get("allergies") or []
+        if isinstance(allergies_raw, list) and allergies_raw:
+            allergies_str = "Allergies: " + ", ".join(str(a) for a in allergies_raw)
+            patient_records = f"{allergies_str}\n\n{clinical_notes}" if clinical_notes else allergies_str
+        else:
+            patient_records = clinical_notes or "(No clinical notes)"
+
+        return InternalOrder(
+            patient=PatientInfo(mrn=mrn, first_name=fname, last_name=lname, dob=dob),
+            provider=ProviderInfo(npi=npi, name=provider_name),
+            careplan=CarePlanInfo(
+                primary_diagnosis=primary,
+                additional_diagnosis=additional,
+                medication_name=med_name,
+                medication_history=medication_history,
+                patient_records=patient_records,
+            ),
+            source=self.source_id,
+            request_flags={"confirm": parsed.get("confirm") is True},
+        )
+
+
 
 class PharmaCorpAdapter(BaseIntakeAdapter):
     """

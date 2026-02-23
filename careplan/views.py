@@ -46,6 +46,24 @@ def generate_careplan(request):
 
 
 @csrf_exempt
+def intake_medcenter(request):
+    """
+    PharmaCorp Portal XML 接入点
+    POST 请求体为 CareOrderRequest XML，使用 PharmaCorpAdapter 解析
+    """
+    if request.method != "POST":
+        raise BlockError(
+            message="Method not allowed",
+            code="METHOD_NOT_ALLOWED",
+            http_status=405,
+        )
+    adapter = get_adapter("medcenter")
+    order = adapter.process(request.body, source="medcenter")
+    data = order.to_create_careplan_dict()
+    result = services.create_careplan(data)
+    return JsonResponse(result, json_dumps_params={"ensure_ascii": False})
+
+@csrf_exempt
 def intake_pharmacorp(request):
     """
     PharmaCorp Portal XML 接入点

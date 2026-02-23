@@ -7,7 +7,47 @@ import pytest
 from pharmacy_plan.exceptions import ValidationError
 
 from careplan.intake import InternalOrder, get_adapter
-from careplan.intake.adapters import WebFormAdapter, PharmaCorpAdapter
+from careplan.intake.adapters import WebFormAdapter, PharmaCorpAdapter, MedCenterJsonAdapter
+
+
+CLINIC_B_DATA = {
+    "order_info": {
+        "created": "01/15/2025 2:30 PM",
+        "src": "DOWNTOWN_CLINIC"
+    },
+    "pt": {
+        "mrn": "234567",
+        "fname": "Jane",
+        "lname": "Smith",
+        "mi": "A",
+        "dob": "03/22/1985",
+        "gender": "F",
+        "wt": 65,
+        "wt_unit": "kg"
+    },
+    "provider": {
+        "name": "Dr. Emily Johnson",
+        "npi_num": "0987654321"
+    },
+    "dx": {
+        "primary": "G70.00",
+        "secondary": ["E11.9", "I10"]
+    },
+    "rx": {
+        "med_name": "Gamunex-C",
+        "ndc": "13533-0800-20",
+        "dosage": "32.5g",
+        "freq": "every day"
+    },
+    "allergies": ["Penicillin", "Sulfa"],
+    "med_hx": [
+        "Metformin 500mg twice daily",
+        "Lisinopril 5mg once daily",
+        "Atorvastatin 20mg at bedtime",
+        "Aspirin 81mg once daily"
+    ],
+    "clinical_notes": "Patient presents with progressive weakness over past 3 weeks. Diagnosed with MG 6 months ago. Neuro consult recommends IVIG therapy. Patient educated on infusion process."
+}
 
 
 PARTNER_C_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -118,6 +158,59 @@ class TestPharmaCorpAdapter:
             adapter.process("<invalid")
 
 
+class TestMedCenterJsonAdapter:
+    """MedCenter JSON adapter (clinic_b format)."""
+
+    def test_valid_json_transforms(self):
+        adapter = MedCenterJsonAdapter()
+        order = adapter.process(json.dumps(CLINIC_B_DATA))
+        assert order.patient.mrn == "234567"
+        assert order.patient.first_name == "Jane"
+        assert order.patient.last_name == "Smith"
+        assert order.patient.dob == "1985-03-22"
+        assert order.provider.npi == "0987654321"
+        assert order.provider.name == "Dr. Emily Johnson"
+        assert order.careplan.primary_diagnosis == "G70.00"
+        assert order.careplan.additional_diagnosis == "E11.9, I10"
+        assert order.careplan.medication_name == "Gamunex-C"
+        assert "Metformin" in order.careplan.medication_history
+        assert "Lisinopril" in order.careplan.medication_history
+        assert "Allergies" in order.careplan.patient_records
+        assert "Penicillin" in order.careplan.patient_records
+        assert "MG" in order.careplan.patient_records
+        assert order.raw_data is not None
+
+    def test_dob_mmddyyyy_conversion(self):
+        adapter = MedCenterJsonAdapter()
+        data = {**CLINIC_B_DATA, "pt": {**CLINIC_B_DATA["pt"], "dob": "01/15/2025 2:30 PM"}}
+        order = adapter.process(json.dumps(data))
+        assert order.patient.dob == "2025-01-15"
+
+    def test_empty_sections_handled(self):
+        adapter = MedCenterJsonAdapter()
+        minimal = {
+            "pt": {"mrn": "234567", "fname": "J", "lname": "S", "dob": "03/22/1985"},
+            "provider": {"name": "Dr. X", "npi_num": "0987654321"},
+            "dx": {"primary": "G70.00"},
+            "rx": {"med_name": "Drug"},
+            "clinical_notes": "Notes here.",
+        }
+        order = adapter.process(json.dumps(minimal))
+        assert order.patient.mrn == "234567"
+        assert order.careplan.additional_diagnosis == ""
+        assert order.careplan.medication_history == ""
+        assert order.careplan.patient_records == "Notes here."
+
+    def test_to_create_careplan_dict(self):
+        adapter = MedCenterJsonAdapter()
+        order = adapter.process(json.dumps(CLINIC_B_DATA))
+        d = order.to_create_careplan_dict()
+        assert d["patient_mrn"] == "234567"
+        assert d["patient_first_name"] == "Jane"
+        assert d["provider_npi"] == "0987654321"
+        assert d["primary_diagnosis"] == "G70.00"
+
+
 class TestGetAdapter:
     """Factory function."""
 
@@ -128,6 +221,10 @@ class TestGetAdapter:
     def test_pharmacorp_returns_adapter(self):
         adapter = get_adapter("pharmacorp_portal")
         assert isinstance(adapter, PharmaCorpAdapter)
+
+    def test_medcenter_returns_adapter(self):
+        adapter = get_adapter("medcenter")
+        assert isinstance(adapter, MedCenterJsonAdapter)
 
     def test_unknown_source_raises(self):
         with pytest.raises(ValueError) as exc_info:
@@ -179,6 +276,23 @@ class TestIntakeAPIIntegration:
                 "/api/intake/pharmacorp/",
                 data=PARTNER_C_XML,
                 content_type="application/xml",
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+
+    def test_intake_medcenter_accepts_json(self):
+        """POST /api/intake/medcenter/ 接受 MedCenter JSON"""
+        from django.test import Client
+        from unittest.mock import patch
+
+        client = Client()
+        with patch("careplan.services.generate_careplan_task") as m:
+            m.delay = lambda x: None
+            resp = client.post(
+                "/api/intake/medcenter/",
+                data=json.dumps(CLINIC_B_DATA),
+                content_type="application/json",
             )
         assert resp.status_code == 200
         data = resp.json()

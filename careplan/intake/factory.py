@@ -4,11 +4,12 @@
 """
 from typing import Dict, Type
 
-from .adapters import BaseIntakeAdapter, WebFormAdapter, PharmaCorpAdapter
+from .adapters import BaseIntakeAdapter, WebFormAdapter, PharmaCorpAdapter, MedCenterJsonAdapter
 
 # 来源标识 -> Adapter 类
 _ADAPTER_REGISTRY: Dict[str, Type[BaseIntakeAdapter]] = {
     "webform": WebFormAdapter,
+    "medcenter":MedCenterJsonAdapter,
     "pharmacorp_portal": PharmaCorpAdapter,
     "pharmacorp": PharmaCorpAdapter,  # 别名
 }
