@@ -36,7 +36,7 @@ class TestOpenAIService:
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "Generated care plan content"
 
-        with patch("careplan.llm_providers.openai_service.OpenAI") as mock_openai:
+        with patch("openai.OpenAI") as mock_openai:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai.return_value = mock_client
@@ -59,13 +59,14 @@ class TestClaudeService:
     """Claude service (mocked API call)."""
 
     def test_generate_calls_claude_api(self):
+        pytest.importorskip("anthropic")
         service = ClaudeService(api_key="test-key")
         mock_content = MagicMock()
         mock_content.text = "Claude generated content"
         mock_message = MagicMock()
         mock_message.content = [mock_content]
 
-        with patch("careplan.llm_providers.claude_service.Anthropic") as mock_anthropic:
+        with patch("anthropic.Anthropic") as mock_anthropic:
             mock_client = MagicMock()
             mock_client.messages.create.return_value = mock_message
             mock_anthropic.return_value = mock_client
@@ -78,6 +79,7 @@ class TestClaudeService:
             mock_client.messages.create.assert_called_once()
 
     def test_missing_api_key_raises(self):
+        pytest.importorskip("anthropic")
         service = ClaudeService(api_key="")
         with pytest.raises(ValueError) as exc_info:
             service.generate("sys", "user")
