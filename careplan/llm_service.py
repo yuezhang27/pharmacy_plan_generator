@@ -5,7 +5,11 @@ LLM 生成 Care Plan 统一入口
 import time
 
 from .llm_providers import get_llm_service
-from .metrics import LLM_API_LATENCY, LLM_API_ERROR, LLM_PROVIDER_USAGE
+from .statsd_metrics import (
+    llm_api_error,
+    llm_api_latency_seconds,
+    llm_provider_usage,
+)
 
 SYSTEM_PROMPT = (
     "You are a clinical pharmacist assistant. "
@@ -88,9 +92,9 @@ def generate_careplan(
             temperature=0.7,
             max_tokens=2000,
         )
-        LLM_API_LATENCY.observe(time.perf_counter() - start)
-        LLM_PROVIDER_USAGE.labels(provider=provider_id).inc()
+        llm_api_latency_seconds(time.perf_counter() - start)
+        llm_provider_usage(provider_id)
         return result
     except Exception:
-        LLM_API_ERROR.inc()
+        llm_api_error()
         raise

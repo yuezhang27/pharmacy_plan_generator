@@ -8,12 +8,12 @@ from celery import shared_task
 
 from careplan.models import CarePlan
 from careplan.llm_service import generate_careplan
-from careplan.metrics import (
-    CAREPLAN_COMPLETED,
-    CAREPLAN_FAILED,
-    CELERY_TASK_DURATION,
-    CELERY_TASK_FAILURE,
-    CELERY_TASK_RETRY,
+from careplan.statsd_metrics import (
+    careplan_completed,
+    careplan_failed,
+    celery_task_duration_seconds,
+    celery_task_failure,
+    celery_task_retry,
 )
 
 
@@ -49,17 +49,17 @@ def generate_careplan_task(self, careplan_id):
         careplan.status = 'completed'
         careplan.generated_content = content
         careplan.save()
-        CAREPLAN_COMPLETED.inc()
+        careplan_completed()
     except Exception as exc:
         if self.request.retries >= self.max_retries:
             careplan.status = 'failed'
             careplan.error_message = str(exc)
             careplan.save()
-            CAREPLAN_FAILED.inc()
-            CELERY_TASK_FAILURE.inc()
-            CELERY_TASK_DURATION.observe(time.perf_counter() - start)
+            careplan_failed()
+            celery_task_failure()
+            celery_task_duration_seconds(time.perf_counter() - start)
             raise
-        CELERY_TASK_RETRY.inc()
+        celery_task_retry()
         raise self.retry(exc=exc, countdown=2 ** self.request.retries)
     else:
-        CELERY_TASK_DURATION.observe(time.perf_counter() - start)
+        celery_task_duration_seconds(time.perf_counter() - start)

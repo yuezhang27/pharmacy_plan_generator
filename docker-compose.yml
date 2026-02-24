@@ -41,12 +41,13 @@ services:
     command: celery -A pharmacy_plan worker -l info
     volumes:
       - .:/app
-    ports:
-      - "9090:9090"
     depends_on:
       - db
       - redis
+      - statsd_exporter
     environment:
+      - STATSD_HOST=statsd_exporter
+      - STATSD_PORT=9125
       - POSTGRES_DB=pharmacy_db
       - POSTGRES_USER=pharmacy_user
       - POSTGRES_PASSWORD=pharmacy_pass
@@ -56,6 +57,16 @@ services:
       - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - USE_MOCK_LLM=${USE_MOCK_LLM:-1}
+
+  statsd_exporter:
+    image: prom/statsd-exporter:v0.26.0
+    command:
+      - --statsd.mapping-config=/etc/statsd/mapping.yml
+    volumes:
+      - ./statsd_mapping.yml:/etc/statsd/mapping.yml
+    ports:
+      - "9125:9125/udp"
+      - "9102:9102"
 
   prometheus:
     image: prom/prometheus:v2.47.0
@@ -69,6 +80,7 @@ services:
       - "9091:9090"
     depends_on:
       - web
+      - statsd_exporter
 
   grafana:
     image: grafana/grafana:10.2.0

@@ -1,0 +1,22 @@
+# statsd_exporter 映射：将 careplan.* 转为与 Grafana 一致的 Prometheus 指标名
+mappings:
+  - match: "careplan.completed"
+    name: "careplan_completed_total"
+  - match: "careplan.failed"
+    name: "careplan_failed_total"
+  - match: "careplan.celery_task_duration"
+    name: "celery_task_duration_seconds"
+    observer_type: histogram
+  - match: "careplan.celery_task_failure"
+    name: "celery_task_failure_total"
+  - match: "careplan.celery_task_retry"
+    name: "celery_task_retry_total"
+  - match: "careplan.llm_provider_usage.*"
+    name: "llm_provider_usage_total"
+    labels:
+      provider: "$1"
+  - match: "careplan.llm_api_latency"
+    name: "llm_api_latency_seconds"
+    observer_type: histogram
+  - match: "careplan.llm_api_error"
+    name: "llm_api_error_total"

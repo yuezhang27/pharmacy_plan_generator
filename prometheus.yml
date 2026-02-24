@@ -8,7 +8,7 @@ scrape_configs:
       - targets: ["web:8000"]
     metrics_path: /metrics
 
-  - job_name: "pharmacy_celery"
+  - job_name: "pharmacy_statsd"
     static_configs:
-      - targets: ["celery_worker:9090"]
+      - targets: ["statsd_exporter:9102"]
     metrics_path: /metrics

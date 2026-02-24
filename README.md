@@ -163,7 +163,7 @@ docker-compose up -d web celery_worker prometheus grafana
 | **Prometheus** | http://localhost:9091 | 抓取 web:8000/metrics 和 celery_worker:9090/metrics |
 | **Grafana** | http://localhost:3000 | 默认账号 admin / admin |
 | **Web metrics** | http://localhost:8000/metrics | Django 应用指标 |
-| **Celery metrics** | http://localhost:9090/metrics | Celery worker 指标（需 worker 启动后） |
+| **StatsD exporter** | http://localhost:9102/metrics | Worker 指标（经 StatsD UDP 聚合） |
 
 ### Grafana 配置
 
