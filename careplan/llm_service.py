@@ -2,7 +2,10 @@
 LLM 生成 Care Plan 统一入口
 业务代码只调用 generate_careplan，不关心具体 LLM 实现
 """
+import time
+
 from .llm_providers import get_llm_service
+from .metrics import LLM_API_LATENCY, LLM_API_ERROR, LLM_PROVIDER_USAGE
 
 SYSTEM_PROMPT = (
     "You are a clinical pharmacist assistant. "
@@ -67,6 +70,7 @@ def generate_careplan(
     llm_provider: 可选，指定使用的 LLM（openai/claude），不传则用 settings.LLM_PROVIDER
     """
     service = get_llm_service(provider=llm_provider)
+    provider_id = getattr(service, "provider_id", "unknown")
     user_prompt = _build_user_prompt(
         patient=patient,
         provider=provider,
@@ -76,9 +80,17 @@ def generate_careplan(
         medication_history=medication_history,
         patient_records=patient_records,
     )
-    return service.generate(
-        system_message=SYSTEM_PROMPT,
-        user_message=user_prompt,
-        temperature=0.7,
-        max_tokens=2000,
-    )
+    start = time.perf_counter()
+    try:
+        result = service.generate(
+            system_message=SYSTEM_PROMPT,
+            user_message=user_prompt,
+            temperature=0.7,
+            max_tokens=2000,
+        )
+        LLM_API_LATENCY.observe(time.perf_counter() - start)
+        LLM_PROVIDER_USAGE.labels(provider=provider_id).inc()
+        return result
+    except Exception:
+        LLM_API_ERROR.inc()
+        raise

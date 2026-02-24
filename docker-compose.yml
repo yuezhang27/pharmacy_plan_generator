@@ -41,6 +41,8 @@ services:
     command: celery -A pharmacy_plan worker -l info
     volumes:
       - .:/app
+    ports:
+      - "9090:9090"
     depends_on:
       - db
       - redis
@@ -54,6 +56,34 @@ services:
       - REDIS_PORT=6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - USE_MOCK_LLM=${USE_MOCK_LLM:-1}
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9091:9090"
+    depends_on:
+      - web
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
   test:
     build: .
@@ -75,3 +105,4 @@ services:
 
 volumes:
   postgres_data:
+  grafana_data:

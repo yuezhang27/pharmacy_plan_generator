@@ -8,6 +8,7 @@ from django.http import HttpResponse
 
 from pharmacy_plan.exceptions import BlockError
 
+from .metrics import CAREPLAN_SUBMITTED
 from .models import Patient, Provider, CarePlan
 from .tasks import generate_careplan_task
 from .duplication_detection import check_provider, check_patient, check_order
@@ -59,6 +60,9 @@ def create_careplan(data):
     )
 
     generate_careplan_task.delay(careplan.id)
+
+    source = data.get("source", "unknown")
+    CAREPLAN_SUBMITTED.labels(source=source).inc()
 
     return {
         "success": True,

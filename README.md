@@ -142,6 +142,43 @@ docker-compose run --rm test
 USE_SQLITE_FOR_TESTS=1 pytest careplan/tests/
 ```
 
+## Prometheus + Grafana 监控
+
+项目已集成 Prometheus 和 Grafana，用于监控业务指标、性能指标和错误指标。
+
+### 启动监控服务
+
+```bash
+# 启动全部服务（含 Prometheus、Grafana）
+docker-compose up -d --build
+
+# 或只启动监控相关服务
+docker-compose up -d web celery_worker prometheus grafana
+```
+
+### 连接与访问
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| **Prometheus** | http://localhost:9091 | 抓取 web:8000/metrics 和 celery_worker:9090/metrics |
+| **Grafana** | http://localhost:3000 | 默认账号 admin / admin |
+| **Web metrics** | http://localhost:8000/metrics | Django 应用指标 |
+| **Celery metrics** | http://localhost:9090/metrics | Celery worker 指标（需 worker 启动后） |
+
+### Grafana 配置
+
+1. 打开 http://localhost:3000，登录 admin / admin
+2. 数据源已自动配置为 Prometheus（http://prometheus:9090）
+3. 仪表盘 **Pharmacy Care Plan 监控** 已自动加载，可在左侧 Dashboards 中查看
+
+### 指标说明
+
+- **业务**：careplan_submitted_total、careplan_completed_total、careplan_failed_total、完成率、duplication_block/warning、llm_provider_usage
+- **性能**：API 响应时间 P95（generate/status/search）、Celery 任务耗时、LLM 调用耗时
+- **错误**：http_5xx/4xx、validation_error、block_error、celery_task_failure/retry、llm_api_error
+
+详见 `DASHBOARD_METRICS.md`。
+
 ## 停止服务
 
 ```bash

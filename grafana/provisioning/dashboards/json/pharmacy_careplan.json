@@ -1,0 +1,172 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto" } }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "sum(increase(careplan_submitted_total[1h])) by (source)", "legendFormat": "{{source}}", "refId": "A" }],
+      "title": "Care Plan 提交数 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "increase(careplan_completed_total[1h])", "legendFormat": "completed", "refId": "A" }],
+      "title": "Care Plan 完成数 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "increase(careplan_failed_total[1h])", "legendFormat": "failed", "refId": "A" }],
+      "title": "Care Plan 失败数 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit" }
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "sum(rate(careplan_completed_total[5m])) / (sum(rate(careplan_submitted_total[5m])) + 1e-9)", "legendFormat": "completion rate", "refId": "A" }],
+      "title": "完成率 (completed/submitted)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 6 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "sum(increase(duplication_block_total[1h])) by (code)", "legendFormat": "{{code}}", "refId": "A" }],
+      "title": "重复 Block 次数 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 6 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "sum(increase(duplication_warning_total[1h])) by (code)", "legendFormat": "{{code}}", "refId": "A" }],
+      "title": "重复 Warning 次数 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 6 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [{ "expr": "sum(increase(llm_provider_usage_total[1h])) by (provider)", "legendFormat": "{{provider}}", "refId": "A" }],
+      "title": "LLM 使用次数 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 12 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(api_generate_careplan_duration_seconds_bucket[5m])) by (le))", "legendFormat": "generate P95", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(api_careplan_status_duration_seconds_bucket[5m])) by (le))", "legendFormat": "status P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.95, sum(rate(api_search_duration_seconds_bucket[5m])) by (le))", "legendFormat": "search P95", "refId": "C" }
+      ],
+      "title": "API 响应时间 P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 12 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(celery_task_duration_seconds_bucket[5m])) by (le))", "legendFormat": "celery task P95", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(llm_api_latency_seconds_bucket[5m])) by (le))", "legendFormat": "LLM latency P95", "refId": "B" }
+      ],
+      "title": "Celery / LLM 耗时 P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "increase(http_5xx_total[1h])", "legendFormat": "5xx", "refId": "A" },
+        { "expr": "sum(increase(http_4xx_total[1h])) by (code)", "legendFormat": "4xx {{code}}", "refId": "B" },
+        { "expr": "increase(validation_error_total[1h])", "legendFormat": "validation", "refId": "C" },
+        { "expr": "sum(increase(block_error_total[1h])) by (code)", "legendFormat": "block {{code}}", "refId": "D" }
+      ],
+      "title": "HTTP / 校验 / Block 错误 (1h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" } }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "increase(celery_task_failure_total[1h])", "legendFormat": "task failure", "refId": "A" },
+        { "expr": "increase(celery_task_retry_total[1h])", "legendFormat": "task retry", "refId": "B" },
+        { "expr": "increase(llm_api_error_total[1h])", "legendFormat": "LLM error", "refId": "C" }
+      ],
+      "title": "Celery / LLM 错误 (1h)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["pharmacy", "careplan"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Pharmacy Care Plan 监控",
+  "uid": "pharmacy-careplan",
+  "version": 1
+}

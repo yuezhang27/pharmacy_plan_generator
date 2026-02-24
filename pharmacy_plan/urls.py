@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 from careplan import views
+from careplan import views_metrics
 
 # Django是一个Python Web框架
 # urls.py ： 这里放django框架下的所有path（采用RESTful API模式）
@@ -20,4 +21,5 @@ urlpatterns = [
     path('api/careplan/<int:careplan_id>/status/', views.careplan_status, name='careplan_status'),
     path('download-careplan/<int:careplan_id>/', views.download_careplan, name='download_careplan'),
     path('api/search-careplans/', views.search_careplans, name='search_careplans'),
+    path('metrics', views_metrics.metrics, name='metrics'),
 ]
