@@ -64,3 +64,75 @@
 - **celery_queue_length**：积压严重时需扩容或排查慢任务。
 - **postgres_connections**：连接过多可能导致新请求失败。
 - **redis_memory**：内存过高可能影响 Celery 和缓存。
+
+---
+
+# Prometheus + Grafana 监控接入说明
+
+Prometheus + Grafana 监控已接入，实现内容和使用方式如下。
+
+## 实现内容
+
+### 1. 指标埋点
+
+- careplan/services.py：提交成功时增加 careplan_submitted_total（按 source 区分）
+- careplan/tasks.py：完成/失败时增加 careplan_completed_total、careplan_failed_total，并记录 celery_task_duration_seconds、celery_task_failure_total、celery_task_retry_total
+- careplan/llm_service.py：记录 llm_api_latency_seconds、llm_api_error_total、llm_provider_usage_total
+- pharmacy_plan/exception_handler.py：记录 duplication_block_total、duplication_warning_total、block_error_total、validation_error_total
+- careplan/middleware_metrics.py：记录 API 耗时和 HTTP 4xx/5xx（已注册到 settings.py）
+
+### 2. Celery Worker 暴露指标
+
+- careplan/celery_metrics.py：Worker 启动后在 9090 端口提供 /metrics
+- pharmacy_plan/celery.py：通过 worker_ready 信号启动 metrics 服务
+
+### 3. Docker 配置
+
+- docker-compose.yml：新增 prometheus、grafana 服务，celery_worker 暴露 9090 端口
+- prometheus.yml：抓取 web:8000/metrics 和 celery_worker:9090/metrics
+- grafana/provisioning/：自动配置 Prometheus 数据源和 Pharmacy Care Plan 仪表盘
+
+## 如何运行
+
+### 启动全部服务
+
+```bash
+docker-compose up -d --build
+```
+
+### 访问地址
+
+| 服务                             | 地址                                                           |
+| -------------------------------- | -------------------------------------------------------------- |
+| Grafana （账号：admin）          | [http://localhost:3000](http://localhost:3000)                 |
+| Prometheus                       | [http://localhost:9091](http://localhost:9091)                 |
+| Django 应用                      | [http://localhost:8000](http://localhost:8000)                 |
+| Django metrics                   | [http://localhost:8000/metrics](http://localhost:8000/metrics) |
+| Celery metrics（需worker启动后） | [http://localhost:9090/metrics](http://localhost:9090/metrics) |
+
+### 连接关系
+
+Prometheus 抓取:
+
+- web:8000/metrics (Django API 指标)
+- celery_worker:9090/metrics (Celery 任务指标)
+
+Grafana 使用 Prometheus 作为数据源:
+
+- 数据源（容器内）: [http://prometheus:9090](http://prometheus:9090)
+- 仪表盘: Pharmacy Care Plan 监控（自动加载）
+
+### 首次使用步骤
+
+1. 执行 `docker-compose up -d --build`
+2. 等待 web、celery_worker、prometheus、grafana 启动
+3. 打开 [http://localhost:3000](http://localhost:3000，使用) 使用admin / admin 登录
+4. 在左侧 Dashboards 中打开 Pharmacy Care Plan 监控
+
+### 仅启动监控相关服务
+
+```bash
+docker-compose up -d web celery_worker prometheus grafana
+```
+
+数据库和 Redis 会一并启动（作为依赖）。
