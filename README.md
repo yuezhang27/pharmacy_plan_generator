@@ -164,13 +164,13 @@ docker-compose down -v
 
 ### Mock方式 2：显式设置
 
-`set USE_MOCK_LLM=0 && docker compose up -d`
+`set USE_MOCK_LLM=1 && docker compose up -d`
 
 Prod 模式（真实调用 LLM）
 
 ### REAL PROD方式 1：启动时设置
 
-`set USE_MOCK_LLM=1 && docker compose up -d`
+`set USE_MOCK_LLM=0 && docker compose up -d`
 
 ## 测试
 

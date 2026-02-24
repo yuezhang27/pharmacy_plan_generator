@@ -387,7 +387,13 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
-                const data = await response.json();
+                let data;
+                try {
+                    const text = await response.text();
+                    data = text ? JSON.parse(text) : {};
+                } catch (e) {
+                    throw { message: '服务器返回格式错误，请检查后端是否正常运行。' + (response.status >= 500 ? ' (可能需执行 migrate)' : ''), type: 'error' };
+                }
 
                 if (data.success) {
                     const d = data.data || {};
