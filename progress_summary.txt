@@ -1,7 +1,7 @@
 ================================================================================
 Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 ================================================================================
-更新日期: 2026-02-12
+更新日期: 2026-02-13
 用途: 复盘学习过程、项目开发与系统设计决策
 ================================================================================
 
@@ -160,21 +160,45 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
   - 失败时 ValidationError，detail.errors 包含所有错误列表
   - 新增 test_serializers_validation.py
 
+【第 26 步】多数据源 Intake Adapter
+- 要求: 不同医院/诊所数据格式不同（JSON/XML、字段命名各异），统一转 InternalOrder
+- 决策:
+  - InternalOrder dataclass（patient, provider, careplan, source, raw_data）
+  - BaseIntakeAdapter：parse → transform → validate
+  - WebFormAdapter（现有表单 JSON）、PharmaCorpAdapter（XML）、MedCenterJsonAdapter（clinic_b JSON）
+  - get_adapter(source) 工厂；views 使用 adapter.process()，业务只认识 InternalOrder
+  - 新增 /api/intake/pharmacorp/、/api/intake/medcenter/
+
+【第 27 步】LLM Service 抽象层
+- 要求: 支持 OpenAI/Claude 切换，业务代码不依赖具体 LLM；前端可选模型
+- 决策:
+  - BaseLLMService 抽象基类：generate(system_message, user_message) -> str
+  - OpenAIService、ClaudeService、MockLLMService 实现（Adapter 模式）
+  - get_llm_service(provider) 工厂；USE_MOCK_LLM=1 强制 mock
+  - CarePlan.llm_provider 字段；前端 LLM Model 下拉框；任务执行时按 careplan.llm_provider 选择
+  - 移除旧 careplan/model/；新增 careplan/llm_providers/
+
+【第 28 步】前端与 E2E 改进
+- E2E 报错 "Unexpected token '<'"：服务器返回 HTML（500）而非 JSON
+- 决策: 前端先 response.text() 再 JSON.parse，解析失败时显示友好提示（如「可能需执行 migrate」）
+- 格式校验已由 Intake Adapter 的 validate 承担，与 serializers 一致
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
 3.1 架构与分层
-- views-serializers-services 分层：
-  - views: 只负责接收请求、返回响应
-  - serializers: 数据校验和格式转换（前端 ↔ 后端）
-  - services: 所有业务逻辑（DB、Celery、LLM）
+- views-intake-services 分层：
+  - views: 只负责接收请求、调用 get_adapter().process()、返回响应
+  - intake: 多数据源 Adapter（parse/transform/validate）→ InternalOrder → to_create_careplan_dict()
+  - services: 所有业务逻辑（DB、Celery、LLM）；只认识 create_careplan(data) 的 dict 格式
+  - serializers: 格式校验逻辑已并入 intake adapter.validate，保留供测试
 
 3.2 技术选型
 - 后端: Django + Python
 - 数据库: PostgreSQL
 - 队列: Celery + Redis（broker + result backend）
-- 容器: Docker + docker-compose（db + redis + web + celery_worker）
-- LLM: OpenAI API（openai>=1.x + httpx），由 Celery worker 调用；支持 USE_MOCK_LLM 切换 mock
+- 容器: Docker + docker-compose（db + redis + web + celery_worker + test）
+- LLM: 抽象层 careplan/llm_providers/；支持 OpenAI、Claude、Mock；USE_MOCK_LLM 切换
 - 前端获知完成: Polling（每 3 秒调 /api/careplan/<id>/status/）
 
 3.3 Care Plan 状态与流程
@@ -187,10 +211,12 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - Patient: first_name, last_name, mrn(6位唯一), dob
 - Provider: name, npi(10位唯一)
 - CarePlan: patient_id, provider_id, primary_diagnosis, medication_name, 
-  patient_records, status, generated_content 等
+  patient_records, status, generated_content, llm_provider（可选，openai/claude）等
 
 3.5 API 设计
-- POST /api/generate-careplan/      提交 care plan 请求（异步：存 DB + Celery 入队，立即返回）
+- POST /api/generate-careplan/      提交 care plan（WebForm JSON，X-Intake-Source 默认 webform）
+- POST /api/intake/pharmacorp/      PharmaCorp XML 接入
+- POST /api/intake/medcenter/       MedCenter JSON 接入
 - GET  /api/careplan/<id>/          获取单个 care plan（JSON，仅 completed 有内容）
 - GET  /api/careplan/<id>/status/   轮询用：返回 status、content（completed 时）、error（failed 时）
 - GET  /download-careplan/<id>/     下载 .txt 文件
@@ -206,14 +232,16 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - Duplication detection: Provider(NPI+名字)、Patient(MRN/姓名+DOB)、Order(同日/异日)
 
 3.7 环境变量
-- OPENAI_API_KEY: 优先系统环境变量，其次 .env
-- USE_MOCK_LLM: 1=mock LLM（不调 OpenAI），0=真实 LLM；默认 1
+- OPENAI_API_KEY, ANTHROPIC_API_KEY: LLM API 密钥
+- USE_MOCK_LLM: 1=mock（不调真实 API），0=真实 LLM；默认 1
+- LLM_PROVIDER: openai | claude；USE_MOCK_LLM=0 时生效
 - REDIS_HOST, REDIS_PORT: 用于连接 Redis（默认 redis:6379）
-- Docker: 通过 docker-compose environment 传递 ${OPENAI_API_KEY}、${USE_MOCK_LLM:-1}
+- Docker: 通过 docker-compose environment 传递
 
-3.8 LLM 模式切换
-- Mock 模式（开发/测试）: USE_MOCK_LLM=1 或不设置；generate_careplan_mock 返回固定文本
-- Prod 模式: USE_MOCK_LLM=0；调用 OpenAI API
+3.8 LLM 抽象层
+- BaseLLMService.generate(system_message, user_message) -> str；业务只依赖此接口
+- OpenAIService、ClaudeService、MockLLMService；get_llm_service(provider) 工厂
+- 前端 LLM Model 下拉框可选 openai/claude；存入 CarePlan.llm_provider，任务执行时使用
 
 3.9 数据库 Mock 数据
 - 格式: PostgreSQL SQL
@@ -225,10 +253,11 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 测试用 SQLite 而不使用 PostgreSQL: 本地运行 pytest 时设置 USE_SQLITE_FOR_TESTS=1，settings 会切换为 sqlite3 :memory:，无需启动 Docker/PostgreSQL
 - Docker 跑测试: docker-compose run --rm test，使用 PostgreSQL（与生产一致）
 - 测试分类:
-  - Unit: test_duplication_patient（Patient 重复检测，目标 90% 覆盖率）、test_duplication_provider_order（Provider/Order）
-  - Integration: test_integration（完整 API 流程：create、status、search）
-  - Error: test_errors（错误输入 → 对应错误响应：invalid JSON、METHOD_NOT_ALLOWED、PROVIDER_NPI_NAME_MISMATCH、PATIENT_MRN_MISMATCH、ORDER_SAME_DAY_DUPLICATE、NOT_FOUND 等）
-- Celery 任务: 测试中 mock generate_careplan_task.delay，不实际执行 Celery
+  - Unit: test_duplication_patient、test_duplication_provider_order、test_serializers_validation、test_llm_providers、test_intake_adapters
+  - Integration: test_integration（完整 API 流程）
+  - Error: test_errors（错误输入 → 对应错误响应）
+- Celery 任务: 测试中 mock generate_careplan_task.delay
+- Claude 测试: anthropic 未安装时 pytest.importorskip 跳过
 
 3.11 Patient 重复检测原则（业务规则）
 - MRN 已存在 + 姓名/DOB 不一致 + 用户继续 → 以**原有 MRN 的既有人口学信息**为准（MRN 为唯一标识）
@@ -244,22 +273,35 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 --------------------------------------------------------------------------------
 pharmacy_plan_generator/
 ├── careplan/                 # Django app
-│   ├── models.py            # Patient, Provider, CarePlan
-│   ├── views.py             # 只负责请求/响应
-│   ├── serializers.py       # 数据校验和格式转换（parse_generate_careplan_request）
-│   ├── services.py          # 业务逻辑（create_careplan, get_careplan_detail 等）
+│   ├── models.py            # Patient, Provider, CarePlan（含 llm_provider）
+│   ├── views.py             # 调用 intake get_adapter、services
+│   ├── serializers.py       # 格式校验（已并入 intake，保留供测试）
+│   ├── services.py          # create_careplan, get_careplan_detail 等
 │   ├── duplication_detection.py  # check_provider, check_patient, check_order
+│   ├── intake/              # 多数据源 Adapter
+│   │   ├── types.py         # InternalOrder, PatientInfo, ProviderInfo, CarePlanInfo
+│   │   ├── adapters.py      # WebFormAdapter, PharmaCorpAdapter, MedCenterJsonAdapter
+│   │   ├── factory.py       # get_adapter
+│   │   └── README.md
+│   ├── llm_providers/       # LLM 抽象层
+│   │   ├── base.py          # BaseLLMService
+│   │   ├── openai_service.py
+│   │   ├── claude_service.py
+│   │   ├── mock_service.py
+│   │   ├── factory.py       # get_llm_service
+│   │   └── README.md
+│   ├── llm_service.py       # generate_careplan 统一入口
 │   ├── tasks.py             # Celery 任务 generate_careplan_task
-│   ├── llm_service.py       # generate_careplan（统一入口）、generate_careplan_mock、
-│   │                        # generate_careplan_with_llm（真实 OpenAI）
-│   ├── templates/           # index.html（表单 + 搜索 + 下载）
-│   ├── tests/               # pytest 测试
-│   │   ├── test_duplication_patient.py    # Patient 重复检测（90% 覆盖率目标）
+│   ├── templates/           # index.html（表单 + LLM 下拉 + 搜索 + 下载）
+│   ├── tests/
+│   │   ├── test_duplication_patient.py
 │   │   ├── test_duplication_provider_order.py
-│   │   ├── test_errors.py   # 错误输入 → 对应错误响应
+│   │   ├── test_errors.py
 │   │   ├── test_integration.py
-│   │   └── test_serializers_validation.py # 格式校验
-│   ├── management/commands/ # run_careplan_worker（手写版，已被 Celery 替代）
+│   │   ├── test_serializers_validation.py
+│   │   ├── test_intake_adapters.py
+│   │   └── test_llm_providers.py
+│   ├── management/commands/
 │   └── migrations/
 ├── pharmacy_plan/            # 项目配置
 │   ├── exceptions.py        # BaseAppException, ValidationError, BlockError, WarningException
@@ -275,7 +317,7 @@ pharmacy_plan_generator/
 ├── .coveragerc              # coverage 配置
 ├── docker-compose.yml       # db + redis + web + celery_worker + test
 ├── Dockerfile
-├── requirements.txt         # 含 celery, redis, pytest, pytest-django, pytest-cov
+├── requirements.txt         # 含 celery, redis, openai, anthropic, pytest, pytest-django, pytest-cov
 ├── design.md                # 原始设计文档
 ├── REFACTOR_MIGRATION_TABLE.md  # views 拆分迁移表
 └── progress_summary.txt     # 本文件
@@ -294,9 +336,10 @@ pharmacy_plan_generator/
 
 七、今日问答与发现
 --------------------------------------------------------------------------------
-- **AppExceptionMiddleware 疑惑**：为何需要 middleware？因为 Django 没有 view 异常的全局钩子，只有 middleware 的 process_exception 能拦截；handler 只是我们拆出的逻辑函数，不删 middleware 则 handler 永远不会被调用
-- **Middleware 与 Handler**：不是单纯的 wrapper，而是配套使用；显式在每个 view 调用 handler 违反 DRY，故用 middleware 统一处理
-- **E2E 发现 format validation 未实现**：unit test 通过但 E2E 可随意输入错误格式仍能生成 care plan；原因：serializer 只校验 JSON 解析，未校验 NPI 10 位、MRN 6 位等；progress_summary 已注明「serializer 尚未强制格式」
+- **LLM 抽象层是否用 Adapter 模式**：已使用；BaseLLMService.generate 为目标接口，OpenAIService/ClaudeService 将各自 API 适配为统一接口
+- **E2E "Unexpected token '<'"**：服务器返回 HTML（500）而非 JSON；原因多为 migrate 未执行（llm_provider 字段）；前端改为先 text() 再 parse，失败时提示「可能需执行 migrate」
+- **AppExceptionMiddleware 疑惑**：Django 没有 view 异常的全局钩子，只有 middleware 的 process_exception 能拦截
+- **E2E 发现 format validation 未实现**：已由 Intake Adapter 的 validate 承担
 - 测试策略：本地开发用 USE_SQLITE_FOR_TESTS=1 跑 pytest，无需 PostgreSQL；Docker 跑测试用 PostgreSQL 与生产一致
 - 不需要整页刷新也能看到新完成的 care plan：点「Search Care Plans」会发起新请求查 DB，即可看到结果
 - 「不自动更新」的含义：页面上无轮询、无推送；任何触发新 HTTP 请求的操作都能拿到最新数据
