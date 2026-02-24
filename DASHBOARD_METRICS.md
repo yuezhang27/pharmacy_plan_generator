@@ -1,3 +1,62 @@
+## 最终dashboard实现
+
+已完成 StatsD 方案实现，改动总结如下：
+
+## 实现总结
+
+### 架构
+
+```
+Worker 子进程 --UDP--> statsd_exporter --/metrics--> Prometheus --> Grafana
+                (9125)        (9102)
+```
+
+### 修改内容
+
+1. **`careplan/statsd_metrics.py`**（新增）
+   - 封装 StatsD 客户端，通过 UDP 发送指标
+   - 指标：`careplan_completed`, `careplan_failed`, `celery_task_duration`, `celery_task_failure`, `celery_task_retry`, `llm_provider_usage`, `llm_api_latency`, `llm_api_error`
+
+2. **`careplan/tasks.py`**
+   - 使用 `statsd_metrics` 替代 `prometheus_client` 记录任务相关指标
+
+3. **`careplan/llm_service.py`**
+   - 使用 `statsd_metrics` 替代 `prometheus_client` 记录 LLM 相关指标
+
+4. **`statsd_mapping.yml`**（新增）
+   - 将 StatsD 指标映射为与 Grafana 一致的 Prometheus 指标名
+
+5. **`docker-compose.yml`**
+   - 新增 `statsd_exporter` 服务
+   - `celery_worker` 增加 `STATSD_HOST`、`STATSD_PORT`，并依赖 `statsd_exporter`
+   - 移除 celery worker 的 9090 端口（不再暴露本地 metrics）
+
+6. **`pharmacy_plan/celery.py`**
+   - 移除 `worker_ready` 中的 metrics 服务启动逻辑
+
+7. **`prometheus.yml`**
+   - 将 `pharmacy_celery` 改为抓取 `statsd_exporter:9102`
+
+8. **`requirements.txt`**
+   - 新增 `statsd==4.0.1`
+
+9. **删除 `careplan/celery_metrics.py`**
+   - 不再使用
+
+### 业务影响
+
+- Celery 仍为 prefork 模式，并发行为不变
+- 仅将 worker 内指标上报方式从进程内 registry 改为 UDP 发送，对业务逻辑无影响
+- 指标链路：Worker → StatsD UDP → statsd_exporter → Prometheus → Grafana
+
+### 启动与验证
+
+```bash
+docker-compose up -d --build
+```
+
+## 执行 E2E 测试后，在 Grafana 中应能看到 `careplan_completed_total` 等指标。
+
 | 类别         | 指标名称                               | 说明                                    | 能发现的问题                       | 告警阈值建议            |
 | ------------ | -------------------------------------- | --------------------------------------- | ---------------------------------- | ----------------------- |
 | **业务指标** | careplan_submitted_total               | 提交的 care plan 总数（按 source 分）   | 业务量、各接入源使用情况           | -                       |
