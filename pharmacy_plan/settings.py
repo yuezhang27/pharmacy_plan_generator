@@ -74,11 +74,19 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# OPENAI_API_KEY 可以从系统环境变量或 .env 文件读取
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+# LLM 配置
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-# LLM 模式：USE_MOCK_LLM=1 用 mock（不调 OpenAI），=0 用真实 LLM
-USE_MOCK_LLM = os.getenv('USE_MOCK_LLM', '1') == '1'
+# LLM 模式：USE_MOCK_LLM=1 用 mock（不调真实 API），=0 用真实 LLM
+USE_MOCK_LLM = os.getenv("USE_MOCK_LLM", "1") == "1"
+
+# LLM 提供商：openai | claude（USE_MOCK_LLM=0 时生效）
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+
+# 各提供商默认模型（可选）
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
 # Redis（Celery broker + result backend）
 REDIS_HOST = os.getenv('REDIS_HOST', 'redis')

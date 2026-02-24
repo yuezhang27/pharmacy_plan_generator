@@ -54,6 +54,7 @@ class CarePlan(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     generated_content = models.TextField(blank=True)
     error_message = models.TextField(blank=True)
+    llm_provider = models.CharField(max_length=50, blank=True)  # openai/claude，空则用 settings
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

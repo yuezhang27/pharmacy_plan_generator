@@ -54,7 +54,8 @@ def create_careplan(data):
         medication_name=data['medication_name'],
         medication_history=data.get('medication_history', ''),
         patient_records=data['patient_records'],
-        status='pending'
+        status='pending',
+        llm_provider=data.get('llm_provider', ''),
     )
 
     generate_careplan_task.delay(careplan.id)

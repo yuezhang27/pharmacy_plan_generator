@@ -17,7 +17,7 @@ def index(request):
 
 
 def _get_intake_source(request) -> str:
-    """根据请求确定数据来源，用于选择 Adapter"""
+    """根据请求确定数据来源，用于选择 intake Adapter"""
     return request.headers.get("X-Intake-Source", "webform").lower()
 
 

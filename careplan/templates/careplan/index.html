@@ -31,6 +31,14 @@
             font-weight: bold;
             color: #555;
         }
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
         input[type="text"],
         input[type="date"],
         textarea {
@@ -200,6 +208,16 @@
                 <textarea id="patient_records" name="patient_records" required></textarea>
             </div>
 
+            <h2>LLM Model</h2>
+            <div class="form-group">
+                <label for="llm_provider">Model (USE_MOCK_LLM=0 时生效)</label>
+                <select id="llm_provider" name="llm_provider">
+                    <option value="">Default (settings)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                    <option value="claude">Claude</option>
+                </select>
+            </div>
+
             <button type="submit" id="submitBtn">Generate Care Plan</button>
         </form>
 
@@ -358,6 +376,7 @@
                 medication_name: document.getElementById('medication_name').value,
                 medication_history: document.getElementById('medication_history').value,
                 patient_records: document.getElementById('patient_records').value,
+                llm_provider: document.getElementById('llm_provider').value || '',
                 confirm: false
             };
             

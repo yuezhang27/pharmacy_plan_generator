@@ -33,6 +33,7 @@ def generate_careplan_task(self, careplan_id):
             medication_name=careplan.medication_name,
             medication_history=careplan.medication_history or '',
             patient_records=careplan.patient_records,
+            llm_provider=careplan.llm_provider or None,
         )
         careplan.status = 'completed'
         careplan.generated_content = content

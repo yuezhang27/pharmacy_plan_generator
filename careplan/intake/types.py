@@ -48,7 +48,7 @@ class InternalOrder:
         """转换为 create_careplan 所需的 dict 格式"""
         if confirm is None:
             confirm = self.request_flags.get("confirm", False)
-        return {
+        d = {
             "patient_mrn": self.patient.mrn,
             "patient_first_name": self.patient.first_name,
             "patient_last_name": self.patient.last_name,
@@ -62,3 +62,6 @@ class InternalOrder:
             "patient_records": self.careplan.patient_records,
             "confirm": confirm,
         }
+        if self.request_flags.get("llm_provider"):
+            d["llm_provider"] = self.request_flags["llm_provider"]
+        return d

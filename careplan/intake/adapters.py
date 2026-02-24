@@ -130,8 +130,12 @@ class WebFormAdapter(BaseIntakeAdapter):
                 patient_records=str(parsed.get("patient_records", "")).strip(),
             ),
             source=self.source_id,
-            request_flags={"confirm": parsed.get("confirm") is True},
+            request_flags={
+                "confirm": parsed.get("confirm") is True,
+                "llm_provider": (parsed.get("llm_provider") or "").strip() or None,
+            },
         )
+
 
 class MedCenterJsonAdapter(BaseIntakeAdapter):
     """
@@ -214,9 +218,11 @@ class MedCenterJsonAdapter(BaseIntakeAdapter):
                 patient_records=patient_records,
             ),
             source=self.source_id,
-            request_flags={"confirm": parsed.get("confirm") is True},
+            request_flags={
+                "confirm": parsed.get("confirm") is True,
+                "llm_provider": (parsed.get("llm_provider") or "").strip() or None,
+            },
         )
-
 
 
 class PharmaCorpAdapter(BaseIntakeAdapter):
