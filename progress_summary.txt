@@ -183,6 +183,28 @@ Pharmacy Care Plan Generator - 项目进度与系统设计决策总结
 - 决策: 前端先 response.text() 再 JSON.parse，解析失败时显示友好提示（如「可能需执行 migrate」）
 - 格式校验已由 Intake Adapter 的 validate 承担，与 serializers 一致
 
+【第 29 步】Prometheus + Grafana 监控
+- 要求: 用 Prometheus + Grafana 做监控，指标见 DASHBOARD_METRICS.md
+- 决策:
+  - careplan/metrics.py 定义 Prometheus 指标；views_metrics 暴露 /metrics
+  - MetricsMiddleware 记录 API 耗时、HTTP 4xx/5xx
+  - Celery prefork 下 careplan_completed_total 无法统计（子进程与主进程隔离）
+  - 改用 StatsD：Worker 通过 UDP 发指标 → statsd_exporter → Prometheus
+  - docker-compose 新增 prometheus、grafana、statsd_exporter
+
+【第 30 步】Terraform AWS 一键部署
+- 要求: 用 Terraform 一键部署到 AWS；SQS + DLQ（失败 3 次进 DLQ）；RDS PostgreSQL db.t3.micro；3 个 Lambda（create_order、generate_careplan、get_order）；API Gateway
+- 决策:
+  - terraform/ 目录：VPC、RDS、SQS、Lambda、API Gateway
+  - POST /orders → create_order Lambda（写 RDS + 发 SQS）
+  - SQS 触发 generate_careplan Lambda（Mock LLM 更新 RDS）
+  - GET /orders/{id} → get_order Lambda（查 RDS）
+  - Lambda 用 pg8000（纯 Python，兼容 Lambda Linux）；psycopg2-binary 在 Windows 编译无法在 Lambda 运行
+  - RDS 要求 SSL：连接时加 ssl_context
+  - Lambda 不配置 VPC：RDS 已 publicly_accessible，Lambda 默认有互联网可连 RDS 和 SQS
+  - 部署前需 python scripts/build_lambdas.py 构建 Lambda 包
+  - terraform.tfvars 含 db_password，已加入 .gitignore
+
 三、系统设计决策汇总
 --------------------------------------------------------------------------------
 
@@ -320,6 +342,12 @@ pharmacy_plan_generator/
 ├── requirements.txt         # 含 celery, redis, openai, anthropic, pytest, pytest-django, pytest-cov
 ├── design.md                # 原始设计文档
 ├── REFACTOR_MIGRATION_TABLE.md  # views 拆分迁移表
+├── terraform/               # AWS 部署（RDS + SQS + Lambda + API Gateway）
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── lambdas/             # create_order, generate_careplan, get_order
+│   └── scripts/build_lambdas.py
 └── progress_summary.txt     # 本文件
 
 五、design.md 中尚未实现的部分（后续可迭代）
@@ -346,5 +374,6 @@ pharmacy_plan_generator/
 - Polling 实现后：前端提交后每 3 秒轮询 status API，completed/failed 时自动停止并展示
 - Mock LLM：USE_MOCK_LLM=1 开发，=0 生产；可跑通 Redis → Worker → DB 全流程而不消耗 API
 - 拆分后验证：E2E 跑一遍主流程即可，不必逐个 router 单独测
+- Terraform 部署：destroy 后未来可重新 init/plan/apply；terraform.tfvars 含敏感信息不提交，需重新创建
 
 ================================================================================

@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and fill in
+aws_region  = "us-east-1"
+project_name = "careplan"
+db_username = "careplan_admin"
+db_password = "CHANGE_ME_STRONG_PASSWORD"
+db_name     = "careplan"

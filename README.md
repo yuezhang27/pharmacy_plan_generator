@@ -193,6 +193,101 @@ docker-compose down -v
 
 ---
 
+## AWS Terraform 部署（按需使用）
+
+将 Care Plan 部署到 AWS：RDS PostgreSQL + SQS + Lambda + API Gateway。适用于需要云端部署、Postman 测试完整流程的场景。
+
+### 前置条件
+
+- AWS CLI 已配置（`aws configure`）
+- Terraform >= 1.0
+- Python 3.11+（用于构建 Lambda 包）
+
+### 未来每次需要部署时的完整流程
+
+#### 1. 配置变量
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# 编辑 terraform.tfvars，设置 db_password（必填）
+```
+
+#### 2. 构建 Lambda 包
+
+```bash
+cd terraform
+python scripts/build_lambdas.py
+```
+
+#### 3. 初始化与部署
+
+```bash
+terraform init
+terraform plan
+terraform apply
+```
+
+首次 apply 约需 10–15 分钟（RDS 创建较慢）。
+
+#### 4. 获取 API URL
+
+```bash
+terraform output api_url
+# 或
+terraform output post_orders_url
+terraform output get_order_url
+```
+
+#### 5. Postman 测试
+
+**创建订单**
+
+- Method: `POST`
+- URL: `{api_url}/orders`（例如 `https://xxxxxx.execute-api.us-east-1.amazonaws.com/orders`）
+- Body: `raw` → `JSON`，内容示例：
+
+```json
+{
+  "patient_mrn": "M001",
+  "patient_first_name": "John",
+  "patient_last_name": "Doe",
+  "patient_dob": "1990-01-15",
+  "provider_npi": "1234567890",
+  "provider_name": "Dr. Smith",
+  "primary_diagnosis": "Hypertension",
+  "medication_name": "Lisinopril",
+  "patient_records": "Patient history..."
+}
+```
+
+响应示例：`{"success": true, "data": {"id": 1, "status": "pending", "message": "Order created"}}`
+
+**查询订单**（等待 5–15 秒让 SQS 触发生成）
+
+- Method: `GET`
+- URL: `{api_url}/orders/1`（将 `1` 替换为创建订单时返回的 id）
+
+响应示例：`{"success": true, "data": {"id": 1, "status": "completed", "content": "=== Care Plan (Mock) ===", ...}}`
+
+#### 6. 销毁资源
+
+```bash
+terraform destroy
+```
+
+销毁后，未来需要时只需重新执行上述 1–5 步即可。
+
+### 架构说明
+
+- 3 个 Lambda：create_order（写 RDS + 发 SQS）、generate_careplan（SQS 触发，Mock LLM 更新 RDS）、get_order（查 RDS）
+- SQS DLQ：消息处理失败 3 次后进入 Dead Letter Queue
+- **注意**：`terraform.tfvars` 含 `db_password`，已加入 .gitignore，不会提交
+
+详见 `terraform/README.md`。
+
+---
+
 ## Mock ENV
 
 ### Mock方式 1：不设置，默认 mock
